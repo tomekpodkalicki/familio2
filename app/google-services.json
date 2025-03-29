@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "67129682386",
+    "project_id": "domowniczeqq",
+    "storage_bucket": "domowniczeqq.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:67129682386:android:1984dfc07242af2764400b",
+        "android_client_info": {
+          "package_name": "pl.podkal.domowniczeqqq"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "67129682386-faveog9jb4naj72509vhikhtps31autr.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "pl.podkal.domowniczeqqq",
+            "certificate_hash": "0009dab7dcc15b656085e21e6aba8af96dd09e06"
+          }
+        },
+        {
+          "client_id": "67129682386-f74jqr95fevm59uassbu2031dsfk2oou.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDi3K50NMrx5oIfn_4dA1u02pX1z04EtIU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "67129682386-f74jqr95fevm59uassbu2031dsfk2oou.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
