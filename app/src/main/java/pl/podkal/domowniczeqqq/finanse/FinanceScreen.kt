@@ -84,6 +84,8 @@ import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 
+data class LinkedAccounts(val users: List<String> = emptyList())
+
 // Define a state class to hold all relevant finance data and state
 class FinanceState {
     val transactions = mutableStateListOf<Transaction>()
@@ -171,58 +173,75 @@ fun FinanceScreen(navController: NavController) {
             if (userId == null) {
                 state.transactions.clear()
             } else {
-                // Always perform a fresh fetch from Firestore
-                var query = db.collection("transactions")
-                    .whereEqualTo("userId", userId)
+                // First get linked accounts
+                db.collection("linked_accounts")
+                    .whereArrayContains("users", userId)
+                    .get()
+                    .addOnSuccessListener { linkedSnapshot ->
+                        val userIds = linkedSnapshot.documents.flatMap { doc ->
+                            doc.toObject(LinkedAccounts::class.java)?.users ?: emptyList()
+                        }.distinct()
 
-                // Apply category filter if set
-                if (state.filterCategory != null) {
-                    query = query.whereEqualTo("category", state.filterCategory)
-                }
+                        // Add current user if not in the list
+                        val allUserIds = (userIds + userId).distinct()
 
-                // Execute fetch
-                query.get()
-                    .addOnSuccessListener { snapshot ->
-                        val fetchedTransactions = snapshot.documents.mapNotNull { document ->
-                            try {
-                                val id = document.id
-                                val title = document.getString("title") ?: ""
-                                val amount = document.getDouble("amount") ?: 0.0
-                                val isExpense = document.getBoolean("isExpense") ?: true
-                                val category = document.getString("category") ?: ""
-                                val date = document.getDate("date") ?: Date()
-                                val colorInt = document.getLong("color")?.toInt() ?: Color.Gray.toArgb()
+                        // Always perform a fresh fetch from Firestore
+                        var query = db.collection("transactions")
+                            .whereIn("userId", allUserIds)
 
-                                Transaction(
-                                    id = id,
-                                    title = title,
-                                    amount = amount,
-                                    isExpense = isExpense,
-                                    category = category,
-                                    date = date,
-                                    color = Color(colorInt)
-                                )
-                            } catch (e: Exception) {
-                                Log.e("FinanceScreen", "Error parsing transaction: ${e.message}")
-                                null
+                        // Apply category filter if set
+                        if (state.filterCategory != null) {
+                            query = query.whereEqualTo("category", state.filterCategory)
+                        }
+
+                        // Execute fetch
+                        query.get()
+                            .addOnSuccessListener { snapshot ->
+                                val fetchedTransactions = snapshot.documents.mapNotNull { document ->
+                                    try {
+                                        val id = document.id
+                                        val title = document.getString("title") ?: ""
+                                        val amount = document.getDouble("amount") ?: 0.0
+                                        val isExpense = document.getBoolean("isExpense") ?: true
+                                        val category = document.getString("category") ?: ""
+                                        val date = document.getDate("date") ?: Date()
+                                        val colorInt = document.getLong("color")?.toInt() ?: Color.Gray.toArgb()
+
+                                        Transaction(
+                                            id = id,
+                                            title = title,
+                                            amount = amount,
+                                            isExpense = isExpense,
+                                            category = category,
+                                            date = date,
+                                            color = Color(colorInt)
+                                        )
+                                    } catch (e: Exception) {
+                                        Log.e("FinanceScreen", "Error parsing transaction: ${e.message}")
+                                        null
+                                    }
+                                }
+
+                                // Apply date filtering in memory
+                                val filteredTransactions = fetchedTransactions.filter { transaction ->
+                                    (state.filterStartDate == null || transaction.date >= state.filterStartDate) &&
+                                            (state.filterEndDate == null || transaction.date <= state.filterEndDate)
+                                }
+
+                                // Update state with filtered transactions
+                                state.transactions.clear()
+                                state.transactions.addAll(filteredTransactions)
+
+                                Log.d("FinanceScreen", "Successfully loaded ${filteredTransactions.size} transactions")
                             }
-                        }
-
-                        // Apply date filtering in memory
-                        val filteredTransactions = fetchedTransactions.filter { transaction ->
-                            (state.filterStartDate == null || transaction.date >= state.filterStartDate) &&
-                                    (state.filterEndDate == null || transaction.date <= state.filterEndDate)
-                        }
-
-                        // Update state with filtered transactions
-                        state.transactions.clear()
-                        state.transactions.addAll(filteredTransactions)
-
-                        Log.d("FinanceScreen", "Successfully loaded ${filteredTransactions.size} transactions")
+                            .addOnFailureListener { e ->
+                                Log.e("FinanceScreen", "Error fetching transactions: ${e.message}")
+                                Toast.makeText(context, "Błąd ładowania transakcji: ${e.message}", Toast.LENGTH_SHORT).show()
+                            }
                     }
-                    .addOnFailureListener { e ->
-                        Log.e("FinanceScreen", "Error fetching transactions: ${e.message}")
-                        Toast.makeText(context, "Błąd ładowania transakcji: ${e.message}", Toast.LENGTH_SHORT).show()
+                    .addOnFailureListener { exception ->
+                        Log.e("FinanceScreen", "Error fetching linked accounts: ${exception.message}")
+                        Toast.makeText(context, "Błąd pobierania powiązanych kont", Toast.LENGTH_SHORT).show()
                     }
             }
         }

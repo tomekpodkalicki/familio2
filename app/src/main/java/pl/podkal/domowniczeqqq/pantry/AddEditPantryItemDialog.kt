@@ -65,7 +65,6 @@ fun AddEditPantryItemDialog(
     val context = LocalContext.current
 
     var name by remember { mutableStateOf(pantryItem?.name ?: "") }
-    var description by remember { mutableStateOf(pantryItem?.description ?: "") }
     var category by remember { mutableStateOf(pantryItem?.category ?: "") }
     // Location is now fixed to Spiżarnia - we get it from the parent screen
     var location by remember { mutableStateOf(pantryItem?.location ?: currentLocation) }
@@ -198,20 +197,15 @@ fun AddEditPantryItemDialog(
                                 onClick = {
                                     name = suggestion
                                     expandedNameDropdown = false
+                                    // Update unit based on product name
+                                    PantryItem.DEFAULT_UNITS[suggestion]?.let { defaultUnit ->
+                                        unit = defaultUnit
+                                    }
                                 }
                             )
                         }
                     }
                 }
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                OutlinedTextField(
-                    value = description,
-                    onValueChange = { description = it },
-                    label = { Text("Opis") },
-                    modifier = Modifier.fillMaxWidth()
-                )
 
                 Spacer(modifier = Modifier.height(8.dp))
 
@@ -413,7 +407,6 @@ fun AddEditPantryItemDialog(
                                 id = pantryItem?.id ?: "",
                                 userId = pantryItem?.userId ?: "",
                                 name = name,
-                                description = description,
                                 category = category,
                                 location = location,
                                 quantity = validQuantity,

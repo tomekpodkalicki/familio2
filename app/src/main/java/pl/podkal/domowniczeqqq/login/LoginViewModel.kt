@@ -6,20 +6,33 @@ import androidx.activity.result.ActivityResultLauncher
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.google.firebase.auth.FirebaseUser
+import com.google.firebase.auth.ktx.auth
+import com.google.firebase.firestore.FieldValue
+import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.SetOptions
+import com.google.firebase.ktx.Firebase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
-import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
+// Ujednolicona definicja stanu uwierzytelnienia
+sealed class AuthResponse {
+    data class Success(val user: FirebaseUser) : AuthResponse()
+    data class Error(val message: String) : AuthResponse()
+    object Loading : AuthResponse()
+}
+
 @HiltViewModel
 class LoginViewModel @Inject constructor(
     private val authManager: AuthenticationManager,
-    val savedStateHandle: SavedStateHandle
+    val savedStateHandle: SavedStateHandle,
+    private val db: FirebaseFirestore // Inject Firestore instance
 ) : ViewModel() {
 
     private val _authState = MutableStateFlow<AuthResponse?>(null)
@@ -27,13 +40,34 @@ class LoginViewModel @Inject constructor(
 
     fun login(email: String, password: String) {
         authManager.loginWithEmail(email, password)
-            .onEach { response -> _authState.value = response }
+            .onEach { response ->
+                when (response) {
+                    is AuthResponse.Success -> {
+                        // Zapisujemy dane użytkownika w kolekcji "users"
+                        val userMap = hashMapOf(
+                            "email" to response.user.email,
+                            "lastLogin" to FieldValue.serverTimestamp()
+                        )
+                        db.collection("users")
+                            .document(response.user.uid)
+                            .set(userMap, SetOptions.merge())
+                            .addOnSuccessListener {
+                                _authState.value = response
+                            }
+                            .addOnFailureListener { e ->
+                                _authState.value = AuthResponse.Error(e.message ?: "Failed to save user data")
+                            }
+                    }
+                    else -> _authState.value = response
+                }
+            }
             .catch { e -> _authState.value = AuthResponse.Error(e.message ?: "Unexpected error") }
             .launchIn(viewModelScope)
 
+        // Ustawienie destynacji na "home_screen" po sukcesie logowania
         viewModelScope.launch {
-            authState.collect{ stan ->
-                if( stan is AuthResponse.Success) {
+            authState.collect { state ->
+                if (state is AuthResponse.Success) {
                     savedStateHandle["navigation_destination"] = "home_screen"
                 }
             }
@@ -43,41 +77,60 @@ class LoginViewModel @Inject constructor(
     fun signInWithGoogle(activity: Activity, launcher: ActivityResultLauncher<Intent>) {
         authManager.signInWithGoogle(activity, launcher)
     }
+
     fun handleGoogleSignInResult(data: Intent?) {
         authManager.handleGoogleSignInResult(data) { success ->
-            if (success) {
-                _authState.value = AuthResponse.Success
+            val currentUser = Firebase.auth.currentUser
+            if (success && currentUser != null) {
+                _authState.value = AuthResponse.Success(currentUser)
             } else {
                 _authState.value = AuthResponse.Error("Logowanie Google nie powiodło się")
             }
         }
     }
 
-
-
     fun loginSuccess() {
-        _authState.value = AuthResponse.Success
+        val currentUser = Firebase.auth.currentUser
+        if (currentUser != null) {
+            _authState.value = AuthResponse.Success(currentUser)
+        }
     }
 
     fun loginFailure(message: String) {
         _authState.value = AuthResponse.Error(message)
     }
 
-    fun registerbyEmail(email: String, password: String) {
-        authManager.createAccountWithEmail(
-            email, password
-        )
+    fun registerByEmail(email: String, password: String) {
+        authManager.createAccountWithEmail(email, password)
             .onEach { response ->
-                _authState.value = response
+                if (response is AuthResponse.Success) {
+                    val user = response.user
+                    val userMap = hashMapOf(
+                        "email" to user.email,
+                        "lastLogin" to FieldValue.serverTimestamp()
+                    )
+                    db.collection("users")
+                        .document(user.uid)
+                        .set(userMap, SetOptions.merge())
+                        .addOnSuccessListener {
+                            _authState.value = AuthResponse.Success(user)
+                        }
+                        .addOnFailureListener { e ->
+                            _authState.value = AuthResponse.Error(e.message ?: "Failed to save user data")
+                        }
+                } else {
+                    _authState.value = response
+                }
             }
             .catch { e ->
                 _authState.value = AuthResponse.Error(e.message ?: "Registration failed")
             }
             .launchIn(viewModelScope)
 
+        // Po rejestracji ustawiamy destynację na "login_screen" lub inną wybraną
         viewModelScope.launch {
-            authState.collect { stan ->
-                if (stan is AuthResponse.Success) {
+            authState.collect { state ->
+                if (state is AuthResponse.Success) {
                     savedStateHandle["navigation_destination"] = "login_screen"
                 }
             }
@@ -88,11 +141,10 @@ class LoginViewModel @Inject constructor(
         viewModelScope.launch {
             val currentUser = authManager.getCurrentUser()
             if (currentUser != null) {
-                _authState.value = AuthResponse.Success
+                _authState.value = AuthResponse.Success(currentUser)
             } else {
                 _authState.value = null
             }
-
         }
     }
 
@@ -101,5 +153,3 @@ class LoginViewModel @Inject constructor(
         _authState.value = null
     }
 }
-
-

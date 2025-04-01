@@ -1,6 +1,8 @@
 
 package pl.podkal.domowniczeqqq.shopping
 
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -10,6 +12,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -19,7 +22,6 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -35,6 +37,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 
@@ -67,9 +70,18 @@ fun AddEditShoppingItemDialog(
         }
     }
 
-    LaunchedEffect(category) {
-        if (category.isNotBlank() && ShoppingItem.DEFAULT_UNITS.containsKey(category)) {
-            unit = ShoppingItem.DEFAULT_UNITS[category].toString() ?: "szt."
+    LaunchedEffect(category, name) {
+        if (category.isNotBlank() && name.isNotBlank()) {
+            val categoryUnits = ShoppingItem.DEFAULT_UNITS[category]
+            when (categoryUnits) {
+                is Map<*, *> -> {
+                    @Suppress("UNCHECKED_CAST")
+                    val unitMap = categoryUnits as Map<String, String>
+                    unit = unitMap[name] ?: "szt."
+                }
+                is String -> unit = categoryUnits
+                else -> unit = "szt."
+            }
         }
     }
 
@@ -202,11 +214,26 @@ fun AddEditShoppingItemDialog(
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     listOf("szt.", "kg", "g", "l", "ml").forEach { unitOption ->
-                        FilterChip(
-                            selected = unit == unitOption,
-                            onClick = { unit = unitOption },
-                            label = { Text(unitOption) }
-                        )
+                        Surface(
+                            color = if (unit == unitOption) Color(0xFF3DD1C6) else Color.White,
+                            shape = RoundedCornerShape(16.dp),
+                            modifier = Modifier
+                                .padding(end = 8.dp)
+                                .border(
+                                    width = 1.dp,
+                                    color = Color(0xFF3DD1C6),
+                                    shape = RoundedCornerShape(16.dp)
+                                )
+                                .clickable {
+                                    unit = unitOption
+                                }
+                        ) {
+                            Text(
+                                text = unitOption,
+                                color = if (unit == unitOption) Color.White else Color(0xFF3DD1C6),
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                            )
+                        }
                     }
                 }
 

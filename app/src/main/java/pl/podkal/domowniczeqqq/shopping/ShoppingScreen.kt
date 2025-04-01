@@ -1,6 +1,7 @@
 package pl.podkal.domowniczeqqq.shopping
 
 import android.widget.Toast
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -19,6 +20,7 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Clear
@@ -27,12 +29,14 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.FabPosition
-import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
@@ -44,14 +48,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import com.google.firebase.auth.ktx.auth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.ktx.Firebase
+import pl.podkal.domowniczeq.R
 import pl.podkal.domowniczeqqq.navigation.BottomNavBar
 
 data class ShoppingItem(
@@ -80,13 +86,50 @@ data class ShoppingItem(
                 "Mleko" to "l",
                 "Jogurt" to "szt.",
                 "Ser" to "kg",
-                "Jajka" to "szt."
+                "Śmietana" to "ml",
+                "Jajka" to "szt.",
+                "Masło" to "g"
             ),
-            "Warzywa i Owoce" to "kg",
-            "Mięso" to "kg",
-            "Napoje" to "l",
-            "Chemia" to "szt.",
-            "Przekąski" to "szt."
+            "Pieczywo" to mapOf(
+                "Chleb" to "szt.",
+                "Bułki" to "szt.",
+                "Bagietka" to "szt."
+            ),
+            "Warzywa i Owoce" to mapOf(
+                "Jabłka" to "kg",
+                "Pomidory" to "kg",
+                "Ogórki" to "kg",
+                "Banany" to "kg",
+                "Ziemniaki" to "kg",
+                "Cebula" to "kg",
+                "Marchew" to "kg"
+            ),
+            "Mięso" to mapOf(
+                "Kurczak" to "kg",
+                "Mielone" to "kg",
+                "Szynka" to "kg",
+                "Kiełbasa" to "kg"
+            ),
+            "Napoje" to mapOf(
+                "Woda" to "l",
+                "Sok" to "l",
+                "Cola" to "l",
+                "Piwo" to "szt."
+            ),
+            "Chemia" to mapOf(
+                "Mydło" to "szt.",
+                "Proszek" to "kg",
+                "Płyn do naczyń" to "ml",
+                "Papier toaletowy" to "szt.",
+                "Szampon" to "ml"
+            ),
+            "Przekąski" to mapOf(
+                "Chipsy" to "szt.",
+                "Ciastka" to "szt.",
+                "Orzeszki" to "g",
+                "Paluszki" to "szt."
+            ),
+            "Inne" to "szt."
         )
     }
 }
@@ -131,8 +174,31 @@ fun ShoppingScreen(navController: NavController) {
     }
 
     Scaffold(
-        // Dodany modyfikator, by dolne insets (np. navigationBar) były uwzględnione
         modifier = Modifier.windowInsetsPadding(WindowInsets.navigationBars),
+        topBar = {
+            TopAppBar(
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = Color(0xFF3DD1C6)
+                ),
+                title = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Image(
+                            painter = painterResource(R.drawable.logo),
+                            contentDescription = "Logo",
+                            modifier = Modifier
+                                .height(40.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                        )
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Text(
+                            text = "Moja Lista Zakupów",
+                            style = MaterialTheme.typography.titleLarge,
+                            color = Color.White
+                        )
+                    }
+                }
+            )
+        },
         bottomBar = { BottomNavBar(navController) },
         floatingActionButton = {
             ExtendedFloatingActionButton(
@@ -181,7 +247,7 @@ fun ShoppingScreen(navController: NavController) {
                         it.name.contains(searchQuery, ignoreCase = true)
                     }
                     items(filteredItems) { item ->
-                        ShoppingItemCard(
+                        ShoppingItemRow(
                             shoppingItem = item,
                             onClick = {
                                 selectedItem = item
@@ -195,27 +261,39 @@ fun ShoppingScreen(navController: NavController) {
                                         toastMessage = "Produkt usunięty"
                                         showSuccessToast = true
                                     }
-                            }
+                            },
+                            db = db
                         )
                         Spacer(modifier = Modifier.height(8.dp))
                     }
                 }
             }
 
-            FloatingActionButton(
-                onClick = {
-                    selectedItem = null
-                    showAddDialog = true
-                },
-                modifier = Modifier
-                    .padding(16.dp)
-                    .align(Alignment.BottomEnd),
-                containerColor = Color(0xFF3DD1C6)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Add,
-                    contentDescription = "Dodaj produkt",
-                    tint = Color.White
+            if (showAddDialog) {
+                AddEditShoppingItemDialog(
+                    shoppingItem = selectedItem,
+                    onDismiss = {
+                        showAddDialog = false
+                        selectedItem = null
+                    },
+                    onSave = { newItem ->
+                        if (selectedItem != null) {
+                            db.collection("shopping_items").document(selectedItem!!.id)
+                                .set(newItem.copy(userId = userId))
+                            toastMessage = "Produkt został zaktualizowany"
+                            showSuccessToast = true
+                        } else {
+                            db.collection("shopping_items")
+                                .add(newItem.copy(userId = userId))
+                                .addOnSuccessListener { documentReference ->
+                                    //Log.d(TAG, "DocumentSnapshot added with ID: ${documentReference.id}")
+                                }
+                            toastMessage = "Dodano nowy produkt"
+                            showSuccessToast = true
+                        }
+                        showAddDialog = false
+                        selectedItem = null
+                    }
                 )
             }
         }
@@ -223,10 +301,11 @@ fun ShoppingScreen(navController: NavController) {
 }
 
 @Composable
-fun ShoppingItemCard(
+private fun ShoppingItemRow(
     shoppingItem: ShoppingItem,
     onClick: () -> Unit,
-    onDelete: (ShoppingItem) -> Unit
+    onDelete: (ShoppingItem) -> Unit,
+    db: FirebaseFirestore
 ) {
     androidx.compose.material3.Card(
         modifier = Modifier
@@ -256,23 +335,74 @@ fun ShoppingItemCard(
                 )
             }
             Spacer(modifier = Modifier.width(16.dp))
-            Column(
+            Text(
+                text = shoppingItem.name,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            IconButton(
+                onClick = {
+                    val newQuantity = (shoppingItem.quantity - 1).coerceAtLeast(1.0)
+                    if (newQuantity >= 1) {
+                        db.collection("shopping_items")
+                            .document(shoppingItem.id)
+                            .update("quantity", newQuantity)
+                    }
+                },
+                modifier = Modifier
+                    .size(32.dp)
+                    .background(
+                        color = Color(0xFFEA4335).copy(alpha = 0.2f),
+                        shape = CircleShape
+                    )
+                    .padding(4.dp)
             ) {
                 Text(
-                    text = shoppingItem.name,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Text(
-                    text = "${shoppingItem.quantity} ${shoppingItem.unit}",
-                    color = Color.Gray,
-                    fontSize = 14.sp
+                    text = "-",
+                    style = MaterialTheme.typography.titleLarge,
+                    color = Color(0xFFEA4335)
                 )
             }
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = "%.0f".format(shoppingItem.quantity),
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.width(30.dp),
+                textAlign = TextAlign.Center
+            )
+            Spacer(modifier = Modifier.width(8.dp))
             IconButton(
-                onClick = { onDelete(shoppingItem) }
+                onClick = {
+                    val newQuantity = shoppingItem.quantity + 1
+                    if (newQuantity >= 1) {
+                        db.collection("shopping_items")
+                            .document(shoppingItem.id)
+                            .update("quantity", newQuantity)
+                    }
+                },
+                modifier = Modifier
+                    .size(32.dp)
+                    .background(
+                        color = Color(0xFF4CAF50).copy(alpha = 0.2f),
+                        shape = CircleShape
+                    )
+                    .padding(4.dp)
+            ) {
+                Text(
+                    text = "+",
+                    style = MaterialTheme.typography.titleLarge,
+                    color = Color(0xFF4CAF50)
+                )
+            }
+            Spacer(modifier = Modifier.width(16.dp))
+            IconButton(
+                onClick = { onDelete(shoppingItem) },
+                modifier = Modifier
+                    .size(32.dp)
+                    .padding(4.dp)
             ) {
                 Icon(
                     imageVector = Icons.Default.Delete,

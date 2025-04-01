@@ -44,7 +44,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -85,6 +85,8 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
+data class LinkedAccounts(val groupId: String? = null, val users: List<String> = emptyList())
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PantryScreen(navController: NavController) {
@@ -115,22 +117,25 @@ fun PantryScreen(navController: NavController) {
             return@DisposableEffect onDispose {}
         }
 
-        val registration = db.collection("pantry_items")
-            .whereEqualTo("userId", userId)
-            .addSnapshotListener { snapshot, error ->
-                if (error != null) {
-                    return@addSnapshotListener
-                }
-                val temp = mutableListOf<PantryItem>()
-                snapshot?.documents?.forEach { doc ->
-                    doc.toObject(PantryItem::class.java)?.let {
-                        val item = it.copy(id = doc.id)
-                        temp.add(item)
-                    }
-                }
-                pantryItems = temp
-            }
+        var registration = db.collection("linked_accounts")
+            .whereArrayContains("users", userId)
+            .addSnapshotListener { linkedSnapshot, error ->
+                if (error != null) return@addSnapshotListener
 
+                val userGroups = linkedSnapshot?.documents?.mapNotNull { doc ->
+                    doc.toObject(LinkedAccounts::class.java)?.groupId
+                } ?: emptyList()
+
+                val pantryRegistration = db.collection("pantry_items")
+                    .whereIn("groupId", listOf(userId) + userGroups)
+                    .addSnapshotListener { snapshot, error ->
+                        if (error != null) return@addSnapshotListener
+                        pantryItems = snapshot?.documents?.mapNotNull { doc ->
+                            doc.toObject(PantryItem::class.java)?.copy(id = doc.id)
+                        } ?: emptyList()
+                    }
+                onDispose { pantryRegistration.remove() }
+            }
         onDispose { registration.remove() }
     }
 
@@ -252,17 +257,14 @@ fun PantryScreen(navController: NavController) {
         },
         bottomBar = { BottomNavBar(navController) },
         floatingActionButton = {
-            FloatingActionButton(
+            ExtendedFloatingActionButton(
                 onClick = { showAddDialog = true },
                 containerColor = appBarColor,
-                modifier = Modifier.padding(16.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Add,
-                    contentDescription = "Dodaj produkt",
-                    tint = Color.White
-                )
-            }
+                icon = {
+                    Icon(Icons.Default.Add, contentDescription = "Dodaj produkt")
+                },
+                text = { Text("Dodaj produkt") }
+            )
         }
     ) { paddingValues ->
         Column(
@@ -543,6 +545,7 @@ fun PantryItemCard(
                 )
             }
             Spacer(modifier = Modifier.width(16.dp))
+
             // Nazwa, kategoria i lokalizacja
             Column(modifier = Modifier.weight(1f)) {
                 Text(
@@ -566,128 +569,135 @@ fun PantryItemCard(
                     )
                 }
             }
+
             // Sekcja przycisków
-            Column(horizontalAlignment = Alignment.End) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    // Przycisk zmniejszania ilości
-                    if (onQuantityChange != null) {
-                        IconButton(
-                            onClick = {
-                                if (pantryItem.quantity > 1) {
-                                    onQuantityChange(pantryItem, pantryItem.quantity - 1)
-                                }
-                            },
-                            modifier = Modifier
-                                .size(32.dp)
-                                .background(Color.LightGray.copy(alpha = 0.3f), shape = CircleShape)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Remove,
-                                contentDescription = "Zmniejsz ilość",
-                                tint = Color(0xFFEA4335),
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
-                    }
-                    // Wyświetlanie ilości
-                    Text(
-                        text = "${pantryItem.quantity.toInt()} ${pantryItem.unit}",
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 16.sp
-                    )
-                    // Przycisk zwiększania ilości
-                    if (onQuantityChange != null) {
-                        IconButton(
-                            onClick = {
-                                onQuantityChange(pantryItem, pantryItem.quantity + 1)
-                            },
-                            modifier = Modifier
-                                .size(32.dp)
-                                .background(Color.LightGray.copy(alpha = 0.3f), shape = CircleShape)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Add,
-                                contentDescription = "Zwiększ ilość",
-                                tint = Color(0xFF34A853),
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
-                    }
-                    // Przycisk usuwania produktu
-                    IconButton(
-                        onClick = { onDelete?.invoke(pantryItem) },
-                        modifier = Modifier
-                            .size(32.dp)
-                            .background(Color.LightGray.copy(alpha = 0.3f), shape = CircleShape)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Delete,
-                            contentDescription = "Usuń",
-                            tint = Color(0xFFEA4335),
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-                    // Przycisk przenoszenia do listy zakupowej
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier.padding(horizontal = 4.dp)
+            ) {
+                // Przycisk zmniejszania ilości
+                if (onQuantityChange != null) {
                     IconButton(
                         onClick = {
-                            val shoppingItem = ShoppingItem(
-                                id = "",
-                                userId = pantryItem.userId,
-                                name = pantryItem.name,
-                                category = pantryItem.category ?: "",
-                                quantity = pantryItem.quantity,
-                                unit = pantryItem.unit,
-                                isChecked = false
-                            )
-                            FirebaseFirestore.getInstance().collection("shopping_items")
-                                .add(shoppingItem)
-                                .addOnSuccessListener {
-                                    // Po udanym przeniesieniu usuwamy element z pantry
-                                    FirebaseFirestore.getInstance().collection("pantry_items")
-                                        .document(pantryItem.id)
-                                        .delete()
-                                        .addOnSuccessListener {
-                                            localToastMessage = "Przesunięto do listy zakupowej"
-                                            localShowSuccessToast = true
-                                        }
-                                        .addOnFailureListener {
-                                            localToastMessage = "Błąd podczas przenoszenia do listy zakupowej"
-                                            localShowSuccessToast = true
-                                        }
-                                }
-                                .addOnFailureListener {
-                                    localToastMessage = "Błąd podczas przenoszenia do listy zakupowej"
-                                    localShowSuccessToast = true
-                                }
+                            if (pantryItem.quantity > 1) {
+                                onQuantityChange(pantryItem, pantryItem.quantity - 1)
+                            }
                         },
                         modifier = Modifier
                             .size(32.dp)
                             .background(Color.LightGray.copy(alpha = 0.3f), shape = CircleShape)
+                            .padding(4.dp)
                     ) {
                         Icon(
-                            imageVector = Icons.Default.ShoppingCart,
-                            contentDescription = "Przenieś do listy zakupów",
-                            tint = Color(0xFF3DD1C6),
-                            modifier = Modifier.size(20.dp)
+                            imageVector = Icons.Default.Remove,
+                            contentDescription = "Zmniejsz ilość",
+                            tint = Color(0xFFEA4335),
+                            modifier = Modifier.size(16.dp) // Ikona też nieco mniejsza
                         )
                     }
                 }
-                // Data ważności
-                pantryItem.expiryDate?.let { expiryDate ->
-                    formatDate(expiryDate)?.let { formattedDate ->
-                        Text(
-                            text = "Ważne do: $formattedDate",
-                            fontSize = 12.sp,
-                            color = if (isExpiryClose(expiryDate)) Color.Red else Color.Gray
+                // Wyświetlanie ilości
+                Text(
+                    text = "${pantryItem.quantity.toInt()} ${pantryItem.unit}",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 12.sp
+                )
+                // Przycisk zwiększania ilości
+                if (onQuantityChange != null) {
+                    IconButton(
+                        onClick = {
+                            onQuantityChange(pantryItem, pantryItem.quantity + 1)
+                        },
+                        modifier = Modifier
+                            .size(32.dp)
+                            .background(Color.LightGray.copy(alpha = 0.3f), shape = CircleShape)
+                            .padding(4.dp)
+                    )
+
+                    {
+                        Icon(
+                            imageVector = Icons.Default.Add,
+                            contentDescription = "Zwiększ ilość",
+                            tint = Color(0xFF34A853),
+                            modifier = Modifier.size(16.dp)
                         )
                     }
+                }
+                // Przycisk usuwania produktu
+                IconButton(
+                    onClick = { onDelete?.invoke(pantryItem) },
+                    modifier = Modifier
+                        .size(32.dp)
+                        .background(Color.LightGray.copy(alpha = 0.3f), shape = CircleShape)
+                        .padding(4.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Delete,
+                        contentDescription = "Usuń",
+                        tint = Color(0xFFEA4335),
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+                // Przycisk przenoszenia do listy zakupowej
+                IconButton(
+                    onClick = {
+                        val shoppingItem = ShoppingItem(
+                            id = "",
+                            userId = pantryItem.userId,
+                            name = pantryItem.name,
+                            category = pantryItem.category ?: "",
+                            quantity = pantryItem.quantity,
+                            unit = pantryItem.unit,
+                            isChecked = false
+                        )
+                        FirebaseFirestore.getInstance().collection("shopping_items")
+                            .add(shoppingItem)
+                            .addOnSuccessListener {
+                                // Po udanym przeniesieniu usuwamy element z pantry
+                                FirebaseFirestore.getInstance().collection("pantry_items")
+                                    .document(pantryItem.id)
+                                    .delete()
+                                    .addOnSuccessListener {
+                                        localToastMessage = "Przesunięto do listy zakupowej"
+                                        localShowSuccessToast = true
+                                    }
+                                    .addOnFailureListener {
+                                        localToastMessage = "Błąd podczas przenoszenia do listy zakupowej"
+                                        localShowSuccessToast = true
+                                    }
+                            }
+                            .addOnFailureListener {
+                                localToastMessage = "Błąd podczas przenoszenia do listy zakupowej"
+                                localShowSuccessToast = true
+                            }
+                    },
+                    modifier = Modifier
+                        .size(32.dp)
+                        .background(Color.LightGray.copy(alpha = 0.3f), shape = CircleShape)
+                        .padding(4.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.ShoppingCart,
+                        contentDescription = "Przenieś do listy zakupów",
+                        tint = Color(0xFF3DD1C6),
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+            }
+            // Data ważności
+            pantryItem.expiryDate?.let { expiryDate ->
+                formatDate(expiryDate)?.let { formattedDate ->
+                    Text(
+                        text = "Ważne do: $formattedDate",
+                        fontSize = 12.sp,
+                        color = if (isExpiryClose(expiryDate)) Color.Red else Color.Gray
+                    )
                 }
             }
         }
     }
+
     // Obsługa lokalnego toasta w karcie
     LaunchedEffect(localShowSuccessToast) {
         if (localShowSuccessToast) {
@@ -765,11 +775,12 @@ fun PantryItemGridCard(
                 )
             }
             Spacer(modifier = Modifier.height(4.dp))
+
             // Sekcja ilości
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.Center,
-                modifier = Modifier.fillMaxWidth()
+                horizontalArrangement = Arrangement.spacedBy(12.dp), // Zwiększony odstęp
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp)
             ) {
                 if (onQuantityChange != null) {
                     IconButton(
@@ -779,25 +790,24 @@ fun PantryItemGridCard(
                             }
                         },
                         modifier = Modifier
-                            .size(32.dp)
+                            .size(32.dp) // Delikatnie zmniejszone i ujednolicone rozmiary
                             .background(Color.LightGray.copy(alpha = 0.3f), shape = CircleShape)
+                            .padding(4.dp)
                     ) {
                         Icon(
                             imageVector = Icons.Default.Remove,
                             contentDescription = "Zmniejsz ilość",
                             tint = Color(0xFFEA4335),
-                            modifier = Modifier.size(20.dp)
+                            modifier = Modifier.size(16.dp)
                         )
                     }
                 }
-                Spacer(modifier = Modifier.width(16.dp))
                 Text(
                     text = "${pantryItem.quantity.toInt()} ${pantryItem.unit}",
                     fontWeight = FontWeight.Bold,
                     textAlign = TextAlign.Center,
                     fontSize = 16.sp
                 )
-                Spacer(modifier = Modifier.width(16.dp))
                 if (onQuantityChange != null) {
                     IconButton(
                         onClick = {
@@ -806,18 +816,21 @@ fun PantryItemGridCard(
                         modifier = Modifier
                             .size(32.dp)
                             .background(Color.LightGray.copy(alpha = 0.3f), shape = CircleShape)
+                            .padding(4.dp)
                     ) {
                         Icon(
                             imageVector = Icons.Default.Add,
                             contentDescription = "Zwiększ ilość",
                             tint = Color(0xFF34A853),
-                            modifier = Modifier.size(20.dp)
+                            modifier = Modifier.size(16.dp)
                         )
                     }
                 }
             }
+            Spacer(modifier = Modifier.height(4.dp))
+
             // Ikony usuwania i przenoszenia do listy zakupowej
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.padding(horizontal = 4.dp)) {
                 if (onDelete != null) {
                     IconButton(
                         onClick = {
@@ -828,12 +841,13 @@ fun PantryItemGridCard(
                         modifier = Modifier
                             .size(32.dp)
                             .background(Color.LightGray.copy(alpha = 0.3f), shape = CircleShape)
+                            .padding(4.dp)
                     ) {
                         Icon(
                             imageVector = Icons.Default.Delete,
                             contentDescription = "Usuń produkt",
                             tint = Color.Red,
-                            modifier = Modifier.size(20.dp)
+                            modifier = Modifier.size(18.dp)
                         )
                     }
                 }
@@ -861,12 +875,13 @@ fun PantryItemGridCard(
                     modifier = Modifier
                         .size(32.dp)
                         .background(Color.LightGray.copy(alpha = 0.3f), shape = CircleShape)
+                        .padding(4.dp)
                 ) {
                     Icon(
                         imageVector = Icons.Default.ShoppingCart,
                         contentDescription = "Dodaj do listy zakupów",
                         tint = Color(0xFF34A853),
-                        modifier = Modifier.size(20.dp)
+                        modifier = Modifier.size(18.dp)
                     )
                 }
             }

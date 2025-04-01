@@ -90,6 +90,8 @@ import java.time.YearMonth
 import java.time.format.DateTimeFormatter
 import java.util.Date
 
+data class LinkedAccounts(val groupId: String? = null, val users: List<String> = emptyList())
+
 // ---------------------- MODELE i OBIEKT PRZECHOWUJĄCY DANE ----------------------
 
 // Predefiniowane kategorie wydarzeń
@@ -111,7 +113,8 @@ data class ActivityData(
     var time: LocalTime? = null,
     var timestamp: Long = System.currentTimeMillis(),
     var hasNotification: Boolean = false,
-    var notificationTime: Int? = null // Czas powiadomienia w minutach przed wydarzeniem
+    var notificationTime: Int? = null, // Czas powiadomienia w minutach przed wydarzeniem
+    var groupId: String? = null // Add groupId to ActivityData
 )
 
 object CalendarEventsManager {
@@ -185,7 +188,7 @@ fun HomeScreen(navController: NavController) {
     var category by remember { mutableStateOf("") }
     var selectedTime by remember { mutableStateOf<LocalTime?>(null) }
     var timeText by remember { mutableStateOf("") }
-    var hasNotification by remember { mutableStateOf(false)} //Dodano dla powiadomień
+    var hasNotification by remember { mutableStateOf(false) } //Dodano dla powiadomień
 
     var showDayEventsDialog by remember { mutableStateOf(false) }
     var dayEvents by remember { mutableStateOf(emptyList<ActivityData>()) }
@@ -195,63 +198,72 @@ fun HomeScreen(navController: NavController) {
 
     // -------------- Firestore --------------
     DisposableEffect(userId, currentYearMonth) {
-        val listener = db.collection("events")
-            .whereEqualTo("userId", userId)
-            .addSnapshotListener { snapshot, error ->
-                if (error != null) {
-                    Log.e("Firestore", "Błąd odczytu: ${error.message}")
-                    return@addSnapshotListener
-                }
-                if (snapshot == null) return@addSnapshotListener
+        val registration = db.collection("linked_accounts")
+            .whereArrayContains("users", userId)
+            .addSnapshotListener { linkedSnapshot, error ->
+                if (error != null) return@addSnapshotListener
 
-                val newMonthMap = mutableMapOf<YearMonth, MutableMap<Int, MutableList<ActivityData>>>()
+                val userGroups = linkedSnapshot?.documents?.mapNotNull { doc ->
+                    doc.toObject(LinkedAccounts::class.java)?.groupId
+                } ?: emptyList()
 
-                for (doc in snapshot.documents) {
-                    val docUserId = doc.getString("userId") ?: continue
-                    if (docUserId != userId) continue
-
-                    val year = doc.getLong("year")?.toInt() ?: continue
-                    val month = doc.getLong("month")?.toInt() ?: continue
-                    val day = doc.getLong("day")?.toInt() ?: continue
-
-                    val colorLong = doc.getLong("color")?.toInt() ?: continue
-                    val color = Color(colorLong)
-
-                    val timeString = doc.getString("time")
-                    val localTime = timeString?.let {
-                        try {
-                            LocalTime.parse(it, DateTimeFormatter.ofPattern("HH:mm"))
-                        } catch (_: Exception) {
-                            null
+                val listener = db.collection("events")
+                    .whereIn("groupId", listOf(userId) + userGroups)
+                    .addSnapshotListener { snapshot, error ->
+                        if (error != null) {
+                            Log.e("Firestore", "Błąd odczytu: ${error.message}")
+                            return@addSnapshotListener
                         }
+                        if (snapshot == null) return@addSnapshotListener
+
+                        val newMonthMap = mutableMapOf<YearMonth, MutableMap<Int, MutableList<ActivityData>>>()
+
+                        for (doc in snapshot.documents) {
+                            val year = doc.getLong("year")?.toInt() ?: continue
+                            val month = doc.getLong("month")?.toInt() ?: continue
+                            val day = doc.getLong("day")?.toInt() ?: continue
+
+                            val colorLong = doc.getLong("color")?.toInt() ?: continue
+                            val color = Color(colorLong)
+
+                            val timeString = doc.getString("time")
+                            val localTime = timeString?.let {
+                                try {
+                                    LocalTime.parse(it, DateTimeFormatter.ofPattern("HH:mm"))
+                                } catch (_: Exception) {
+                                    null
+                                }
+                            }
+
+                            val timestamp = doc.getTimestamp("createdAt")?.toDate()?.time
+                                ?: System.currentTimeMillis()
+                            val hasNotification = doc.getBoolean("hasNotification") ?: false
+                            val groupId = doc.getString("groupId")
+
+                            val activityData = ActivityData(
+                                docId = doc.id,
+                                title = doc.getString("title") ?: "",
+                                color = color,
+                                category = doc.getString("category"),
+                                time = localTime,
+                                timestamp = timestamp,
+                                hasNotification = hasNotification,
+                                groupId = groupId
+                            )
+
+                            val ym = YearMonth.of(year, month)
+                            val daysMap = newMonthMap.getOrPut(ym) { mutableMapOf() }
+                            val dayList = daysMap.getOrPut(day) { mutableListOf() }
+                            dayList.add(activityData)
+                        }
+
+                        CalendarEventsManager.userData[userId] = newMonthMap
+                        // Wydarzenia dla bieżącego YearMonth
+                        events = newMonthMap[currentYearMonth]?.values?.flatten() ?: emptyList()
                     }
-
-                    val timestamp = doc.getTimestamp("createdAt")?.toDate()?.time
-                        ?: System.currentTimeMillis()
-                    val hasNotification = doc.getBoolean("hasNotification") ?: false
-
-                    val activityData = ActivityData(
-                        docId = doc.id,
-                        title = doc.getString("title") ?: "",
-                        color = color,
-                        category = doc.getString("category"),
-                        time = localTime,
-                        timestamp = timestamp,
-                        hasNotification = hasNotification
-                    )
-
-                    val ym = YearMonth.of(year, month)
-                    val daysMap = newMonthMap.getOrPut(ym) { mutableMapOf() }
-                    val dayList = daysMap.getOrPut(day) { mutableListOf() }
-                    dayList.add(activityData)
-                }
-
-                CalendarEventsManager.userData[userId] = newMonthMap
-                // Wydarzenia dla bieżącego YearMonth
-                events = newMonthMap[currentYearMonth]?.values?.flatten() ?: emptyList()
+                onDispose { listener.remove() }
             }
-
-        onDispose { listener.remove() }
+        onDispose { registration.remove() }
     }
 
     // ------------------- UI -------------------
@@ -898,7 +910,8 @@ fun HomeScreen(navController: NavController) {
                             "year" to currentYearMonth.year,
                             "month" to currentYearMonth.monthValue,
                             "day" to editingDay!!,
-                            "hasNotification" to hasNotification //Dodano dla powiadomień
+                            "hasNotification" to hasNotification, //Dodano dla powiadomień
+                            "groupId" to userId // Assign groupId to the current user
                         )
                         db.collection("events")
                             .add(dataMap)
@@ -916,7 +929,6 @@ fun HomeScreen(navController: NavController) {
                         editingEvent!!.time = selectedTime
                         editingEvent!!.hasNotification = hasNotification //Dodano dla powiadomień
 
-                        Toast.makeText(context, "Zaktualizowano: $activityTitle (lokalnie)", Toast.LENGTH_SHORT).show()
                     }
 
                     editingEvent = null
