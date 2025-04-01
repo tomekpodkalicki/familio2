@@ -1,6 +1,7 @@
 package pl.podkal.domowniczeqqq.home
 
 import android.app.TimePickerDialog
+import android.util.Log
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Image
@@ -24,18 +25,17 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.itemsIndexed
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.AccessTime
-import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.ArrowForward
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -46,15 +46,16 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -63,16 +64,17 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogProperties
 import androidx.navigation.NavController
 import com.google.firebase.auth.ktx.auth
+import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.ktx.Firebase
 import pl.podkal.domowniczeq.R
 import pl.podkal.domowniczeqqq.navigation.BottomNavBar
@@ -80,27 +82,27 @@ import java.time.LocalDate
 import java.time.LocalTime
 import java.time.YearMonth
 import java.time.format.DateTimeFormatter
+import java.util.Date
 
 // ---------------------- MODELE i OBIEKT PRZECHOWUJĄCY DANE ----------------------
 
 data class ActivityData(
+    var docId: String? = null, // do usuwania/edycji w Firestore
     var title: String,
     var color: Color,
-    var category: String?,
-    var time: LocalTime?
+    var category: String? = null,
+    var time: LocalTime? = null,
+    var timestamp: Long = System.currentTimeMillis()
 )
 
-// Pojedyncza „pół-trwała” przechowalnia kalendarza
-// (Jeśli chcesz mieć dane również po wylogowaniu/zamknięciu aplikacji, użyj bazy danych lub Firestore)
 object CalendarEventsManager {
-    // Mapowanie: userId -> (YearMonth -> mapa: dzień -> lista eventów)
+    // userId -> (YearMonth -> mapa: dzień -> lista eventów)
     val userData = mutableStateMapOf<String, MutableMap<YearMonth, MutableMap<Int, MutableList<ActivityData>>>>()
 }
 
-// Firebase auth
 val auth = Firebase.auth
+val db = FirebaseFirestore.getInstance()
 
-// Mapa nazw miesięcy po polsku
 val polishMonthNames = mapOf(
     1 to "styczeń",
     2 to "luty",
@@ -127,25 +129,22 @@ fun HomeScreen(navController: NavController) {
     val user = auth.currentUser
     val userId = user?.uid ?: "unknownUser"
 
-    // By wyłączyć standardowy przycisk wstecz:
-    BackHandler { /* Ignoruj cofanie */ }
+    BackHandler { /* ignorujemy cofnięcie */ }
 
-    // Aktualny miesiąc (obserwowalny stan)
+    // Stan aktualnie wybranego miesiąca
     var currentYearMonth by remember { mutableStateOf(YearMonth.from(LocalDate.now())) }
 
-    // Pobierz (lub utwórz) mapę dla zalogowanego usera
+    // Mapa usera
     val currentUserMap = CalendarEventsManager.userData.getOrPut(userId) {
         mutableStateMapOf()
     }
-
-    // Z mapy usera pobierz/utwórz mapę dla bieżącego YearMonth
     val currentMonthActivities = currentUserMap.getOrPut(currentYearMonth) {
         mutableStateMapOf()
     }
 
-    // Kalendarz: oblicz dni, wypełnij 42 pola (6 tygodni x 7 dni)
+    // Oblicz 42 pola (6x7)
     val daysInMonth = currentYearMonth.lengthOfMonth()
-    val firstDayOfWeek = currentYearMonth.atDay(1).dayOfWeek.value // pon=1 ... nd=7
+    val firstDayOfWeek = currentYearMonth.atDay(1).dayOfWeek.value
     val offset = firstDayOfWeek - 1
     val totalCells = 42
     val calendarCells = remember(currentYearMonth) {
@@ -157,7 +156,7 @@ fun HomeScreen(navController: NavController) {
         }
     }
 
-    // Stany do dialogów
+    // Stany dialogów
     var showEventDialog by remember { mutableStateOf(false) }
     var editingEvent by remember { mutableStateOf<ActivityData?>(null) }
     var editingDay by remember { mutableStateOf<Int?>(null) }
@@ -168,18 +167,77 @@ fun HomeScreen(navController: NavController) {
     var selectedTime by remember { mutableStateOf<LocalTime?>(null) }
     var timeText by remember { mutableStateOf("") }
 
-    // Dialog z wydarzeniami konkretnego dnia
     var showDayEventsDialog by remember { mutableStateOf(false) }
     var dayEvents by remember { mutableStateOf(emptyList<ActivityData>()) }
     var selectedDay by remember { mutableStateOf<Int?>(null) }
 
+    var events by remember { mutableStateOf<List<ActivityData>>(emptyList()) }
+
+    // -------------- Firestore --------------
+    DisposableEffect(userId, currentYearMonth) {
+        val listener = db.collection("events")
+            .whereEqualTo("userId", userId)
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    Log.e("Firestore", "Błąd odczytu: ${error.message}")
+                    return@addSnapshotListener
+                }
+                if (snapshot == null) return@addSnapshotListener
+
+                val newMonthMap = mutableMapOf<YearMonth, MutableMap<Int, MutableList<ActivityData>>>()
+
+                for (doc in snapshot.documents) {
+                    val docUserId = doc.getString("userId") ?: continue
+                    if (docUserId != userId) continue
+
+                    val year = doc.getLong("year")?.toInt() ?: continue
+                    val month = doc.getLong("month")?.toInt() ?: continue
+                    val day = doc.getLong("day")?.toInt() ?: continue
+
+                    val colorLong = doc.getLong("color")?.toInt() ?: continue
+                    val color = Color(colorLong)
+
+                    val timeString = doc.getString("time")
+                    val localTime = timeString?.let {
+                        try {
+                            LocalTime.parse(it, DateTimeFormatter.ofPattern("HH:mm"))
+                        } catch (_: Exception) {
+                            null
+                        }
+                    }
+
+                    val timestamp = doc.getTimestamp("createdAt")?.toDate()?.time
+                        ?: System.currentTimeMillis()
+
+                    val activityData = ActivityData(
+                        docId = doc.id,
+                        title = doc.getString("title") ?: "",
+                        color = color,
+                        category = doc.getString("category"),
+                        time = localTime,
+                        timestamp = timestamp
+                    )
+
+                    val ym = YearMonth.of(year, month)
+                    val daysMap = newMonthMap.getOrPut(ym) { mutableMapOf() }
+                    val dayList = daysMap.getOrPut(day) { mutableListOf() }
+                    dayList.add(activityData)
+                }
+
+                CalendarEventsManager.userData[userId] = newMonthMap
+                // Wydarzenia dla bieżącego YearMonth
+                events = newMonthMap[currentYearMonth]?.values?.flatten() ?: emptyList()
+            }
+
+        onDispose { listener.remove() }
+    }
+
+    // ------------------- UI -------------------
     Scaffold(
         containerColor = Color(0xFFF8F8F8),
         topBar = {
             TopAppBar(
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = Color(0xFF3DD1C6)
-                ),
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color(0xFF3DD1C6)),
                 title = {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Image(
@@ -201,7 +259,6 @@ fun HomeScreen(navController: NavController) {
                     IconButton(onClick = {
                         Toast.makeText(context, "Logged out successfully", Toast.LENGTH_SHORT).show()
                         logout()
-                        // Przejdź do ekranu logowania
                         navController.navigate("login_screen") {
                             popUpTo("home_screen") { inclusive = true }
                         }
@@ -218,12 +275,13 @@ fun HomeScreen(navController: NavController) {
         bottomBar = { BottomNavBar(navController) },
         modifier = Modifier.windowInsetsPadding(WindowInsets.navigationBars)
     ) { paddingValues ->
+        // Kolumna główna (bez scrolla)
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
         ) {
-            // Pasek z wyborem miesiąca i roku
+            // Pasek wyboru miesiąca
             MonthYearBar(
                 currentYearMonth = currentYearMonth,
                 onMonthChange = { newMonth ->
@@ -240,28 +298,26 @@ fun HomeScreen(navController: NavController) {
                 }
             )
 
-            // Obsługa przesunięć w lewo/prawo (1 miesiąc)
+            // Obsługa przesunięcia w lewo/prawo
             val dragThresholdPx = with(LocalDensity.current) { 40.dp.toPx() }
             var swipedThisGesture by remember { mutableStateOf(false) }
 
+            // 1) KALENDARZ - stała wysokość (np. 300.dp)
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(300.dp)
+                    .height(300.dp) // <-- stała wysokość
                     .pointerInput(Unit) {
                         detectDragGestures(
                             onDragStart = { swipedThisGesture = false },
                             onDragEnd = { swipedThisGesture = false },
                             onDragCancel = { swipedThisGesture = false },
                             onDrag = { _, dragAmount ->
-                                // Jeśli jeszcze nie przesunęliśmy w tym geście, sprawdzamy threshold
                                 if (!swipedThisGesture) {
                                     if (dragAmount.x < -dragThresholdPx) {
-                                        // W lewo -> kolejny miesiąc
                                         currentYearMonth = currentYearMonth.plusMonths(1)
                                         swipedThisGesture = true
                                     } else if (dragAmount.x > dragThresholdPx) {
-                                        // W prawo -> poprzedni miesiąc
                                         currentYearMonth = currentYearMonth.minusMonths(1)
                                         swipedThisGesture = true
                                     }
@@ -270,8 +326,10 @@ fun HomeScreen(navController: NavController) {
                         )
                     }
             ) {
+                // LazyVerticalGrid z userScrollEnabled = false,
+                // aby uniknąć drugiego scrolla w pionie
                 Column {
-                    // Nagłówek dni tygodnia (pn-nd)
+                    // Skróty dni tygodnia
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -289,29 +347,26 @@ fun HomeScreen(navController: NavController) {
                         }
                     }
 
-                    // Siatka dni (42 pola)
                     LazyVerticalGrid(
                         columns = GridCells.Fixed(7),
+                        userScrollEnabled = false,  // <--- klucz, by nie generować pionowego scrolla
                         modifier = Modifier
                             .fillMaxSize()
                             .padding(horizontal = 8.dp),
-                        contentPadding = PaddingValues(2.dp),
-                        verticalArrangement = Arrangement.spacedBy(6.dp),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        contentPadding = PaddingValues(vertical = 4.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
                         itemsIndexed(calendarCells) { _, day ->
                             if (day == null) {
                                 Spacer(modifier = Modifier.aspectRatio(1f))
                             } else {
                                 val dayActivities = currentMonthActivities[day].orEmpty()
-                                val dayColor = dayActivities.lastOrNull()?.color ?: Color.White
                                 DayCell(
                                     day = day,
                                     activities = dayActivities,
-                                    backgroundColor = dayColor,
                                     currentYearMonth = currentYearMonth,
                                     onClick = {
-                                        // Jeśli brak wydarzeń -> pokaż dialog dodawania
                                         if (dayActivities.isEmpty()) {
                                             editingEvent = null
                                             editingDay = day
@@ -322,7 +377,6 @@ fun HomeScreen(navController: NavController) {
                                             timeText = ""
                                             showEventDialog = true
                                         } else {
-                                            // Jeśli są -> pokaż dialog z listą wydarzeń
                                             selectedDay = day
                                             dayEvents = dayActivities
                                             showDayEventsDialog = true
@@ -335,86 +389,110 @@ fun HomeScreen(navController: NavController) {
                 }
             }
 
-            Spacer(modifier = Modifier.height(24.dp))
+            // 2) Sekcja wydarzeń w miesiącu
+            Spacer(modifier = Modifier.height(16.dp))
 
-            // --- Lista wszystkich wydarzeń w miesiącu (flatten) ---
-            val monthEventsMap = currentMonthActivities.toList().sortedBy { it.first }
-            val flattenedEvents = monthEventsMap.flatMap { (day, events) ->
-                events.map { day to it }
-            }
-
-            if (flattenedEvents.isNotEmpty()) {
-                Text(
-                    text = "Wydarzenia w miesiącu",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = Color.White,
+            if (events.isNotEmpty()) {
+                Card(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .background(Color(0xFF3DD1C6))
-                        .padding(8.dp)
-                )
-
-                LazyVerticalGrid(
-                    columns = GridCells.Fixed(2),
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        .padding(horizontal = 16.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant
+                    )
                 ) {
-                    items(flattenedEvents) { (day, event) ->
-                        val date = LocalDate.of(
-                            currentYearMonth.year,
-                            currentYearMonth.monthValue,
-                            day
-                        )
-                        val formattedDate = date.format(DateTimeFormatter.ofPattern("dd.MM.yyyy"))
+                    Text(
+                        text = "Wydarzenia w miesiącu",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp)
+                    )
+                }
 
-                        Card(
+                // 3) Lista wydarzeń - jedyny pionowy scroll
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(events.sortedBy { it.timestamp }) { event ->
+                        Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(100.dp),
-                            colors = CardDefaults.cardColors(containerColor = event.color)
+                                .clickable {
+                                    // Edycja
+                                    editingEvent = event
+                                    editingDay = null
+                                    activityTitle = event.title
+                                    category = event.category ?: ""
+                                    chosenColor = event.color
+                                    selectedTime = event.time
+                                    timeText = event.time?.format(
+                                        DateTimeFormatter.ofPattern("HH:mm")
+                                    ) ?: ""
+                                    showEventDialog = true
+                                }
+                                .padding(horizontal = 8.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Box(modifier = Modifier.fillMaxSize()) {
-                                Column(
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box(
                                     modifier = Modifier
-                                        .align(Alignment.TopStart)
-                                        .padding(8.dp)
-                                        .clickable {
-                                            // Edycja
-                                            editingEvent = event
-                                            editingDay = day
-                                            activityTitle = event.title
-                                            category = event.category ?: ""
-                                            chosenColor = event.color
-                                            selectedTime = event.time
-                                            timeText = event.time?.format(
-                                                DateTimeFormatter.ofPattern("HH:mm")
-                                            ) ?: ""
-                                            showEventDialog = true
-                                        }
-                                ) {
-                                    Text("Opis: ${event.title}", fontWeight = FontWeight.Bold)
-                                    Text("Data: $formattedDate")
-                                    event.time?.let { time ->
-                                        Text(time.format(DateTimeFormatter.ofPattern("HH:mm")))
+                                        .size(12.dp)
+                                        .clip(CircleShape)
+                                        .background(event.color)
+                                )
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Column {
+                                    Text(
+                                        text = event.title,
+                                        style = MaterialTheme.typography.bodyLarge,
+                                        color = Color.Black
+                                    )
+                                    event.category?.let {
+                                        Text(
+                                            text = it,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
                                     }
                                 }
+                            }
 
-                                IconButton(
-                                    onClick = {
-                                        val dayList = currentMonthActivities[day]
-                                        dayList?.remove(event)
-                                        if (dayList?.isEmpty() == true) {
-                                            currentMonthActivities.remove(day)
-                                        }
-                                    },
-                                    modifier = Modifier.align(Alignment.TopEnd)
-                                ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                event.time?.let {
+                                    Text(
+                                        text = it.format(DateTimeFormatter.ofPattern("HH:mm")),
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = Color.Gray,
+                                        modifier = Modifier.padding(end = 8.dp)
+                                    )
+                                }
+                                IconButton(onClick = {
+                                    val docId = event.docId
+                                    if (docId != null) {
+                                        db.collection("events").document(docId).delete()
+                                            .addOnSuccessListener {
+                                                Toast.makeText(context, "Wydarzenie usunięte", Toast.LENGTH_SHORT).show()
+                                            }
+                                            .addOnFailureListener { e ->
+                                                Toast.makeText(context, "Błąd usuwania: ${e.message}", Toast.LENGTH_SHORT).show()
+                                            }
+                                    }
+                                    // Usuń lokalnie
+                                    currentMonthActivities.values.forEach { list ->
+                                        list.remove(event)
+                                    }
+                                }) {
                                     Icon(
                                         imageVector = Icons.Default.Delete,
-                                        contentDescription = "Usuń wydarzenie",
-                                        tint = Color.Black
+                                        contentDescription = "Usuń",
+                                        tint = Color.Black,
+                                        modifier = Modifier.size(20.dp)
                                     )
                                 }
                             }
@@ -422,6 +500,7 @@ fun HomeScreen(navController: NavController) {
                     }
                 }
             } else {
+                // Brak wydarzeń
                 Text(
                     text = "Brak wydarzeń w tym miesiącu",
                     color = Color.White,
@@ -434,24 +513,47 @@ fun HomeScreen(navController: NavController) {
         }
     }
 
-    // ------------ Dialog: lista wydarzeń w wybranym dniu ------------
+    // ------------------ Dialog: Wydarzenia w wybranym dniu ------------------
     if (showDayEventsDialog && selectedDay != null) {
         AlertDialog(
             onDismissRequest = { showDayEventsDialog = false },
+            containerColor = MaterialTheme.colorScheme.surface,
             title = {
-                Text("Wydarzenia dnia $selectedDay/${currentYearMonth.monthValue}/${currentYearMonth.year}")
+                Column {
+                    Text(
+                        text = "Wydarzenia",
+                        style = MaterialTheme.typography.headlineSmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Text(
+                        text = "$selectedDay.${currentYearMonth.monthValue}.${currentYearMonth.year}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             },
             text = {
-                Column {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
                     if (dayEvents.isEmpty()) {
-                        Text("Brak wydarzeń.")
+                        Text(
+                            "Brak wydarzeń.",
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     } else {
                         dayEvents.forEach { event ->
                             Card(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .padding(vertical = 4.dp),
-                                colors = CardDefaults.cardColors(containerColor = event.color)
+                                colors = CardDefaults.cardColors(
+                                    containerColor = event.color.copy(alpha = 0.9f)
+                                ),
+                                shape = RoundedCornerShape(12.dp),
+                                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
                             ) {
                                 Box(modifier = Modifier.fillMaxSize()) {
                                     Column(
@@ -459,7 +561,6 @@ fun HomeScreen(navController: NavController) {
                                             .align(Alignment.TopStart)
                                             .padding(8.dp)
                                             .clickable {
-                                                // Edycja
                                                 editingEvent = event
                                                 editingDay = selectedDay
                                                 activityTitle = event.title
@@ -490,15 +591,31 @@ fun HomeScreen(navController: NavController) {
 
                                     IconButton(
                                         onClick = {
-                                            val dayList = currentMonthActivities[selectedDay]
-                                            if (dayList != null) {
-                                                dayList.remove(event)
-                                                if (dayList.isEmpty()) {
-                                                    currentMonthActivities.remove(selectedDay)
-                                                }
-                                                // odśwież dayEvents
-                                                dayEvents = dayList.toList()
+                                            val list = currentMonthActivities[selectedDay]
+                                            list?.remove(event)
+                                            if (list.isNullOrEmpty()) {
+                                                currentMonthActivities.remove(selectedDay)
                                             }
+                                            // Usuń w Firestore
+                                            val docId = event.docId
+                                            if (docId != null) {
+                                                db.collection("events").document(docId).delete()
+                                                    .addOnSuccessListener {
+                                                        Toast.makeText(
+                                                            context,
+                                                            "Wydarzenie usunięte",
+                                                            Toast.LENGTH_SHORT
+                                                        ).show()
+                                                    }
+                                                    .addOnFailureListener { e ->
+                                                        Toast.makeText(
+                                                            context,
+                                                            "Błąd usuwania: ${e.message}",
+                                                            Toast.LENGTH_SHORT
+                                                        ).show()
+                                                    }
+                                            }
+                                            showDayEventsDialog = false
                                         },
                                         modifier = Modifier.align(Alignment.TopEnd)
                                     ) {
@@ -538,34 +655,59 @@ fun HomeScreen(navController: NavController) {
         )
     }
 
-    // ------------ Dialog: dodawanie/edycja jednego wydarzenia ------------
+    // ------------------ Dialog: Dodawanie / Edycja wydarzenia ------------------
     if (showEventDialog) {
+        var showTimePickerDialog by remember { mutableStateOf(false) }
+
         AlertDialog(
             onDismissRequest = { showEventDialog = false },
+            containerColor = MaterialTheme.colorScheme.surface,
             title = {
-                if (editingEvent == null) {
-                    Text("Dodaj wydarzenie - dzień $editingDay/${currentYearMonth.monthValue}/${currentYearMonth.year}")
-                } else {
-                    Text("Edytuj wydarzenie - dzień $editingDay/${currentYearMonth.monthValue}/${currentYearMonth.year}")
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        text = if (editingEvent == null) "Nowe wydarzenie" else "Edycja wydarzenia",
+                        style = MaterialTheme.typography.headlineSmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    editingDay?.let { dayNum ->
+                        Text(
+                            text = "$dayNum.${currentYearMonth.monthValue}.${currentYearMonth.year}",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
             },
             text = {
-                Column {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
                     OutlinedTextField(
                         value = activityTitle,
                         onValueChange = { activityTitle = it },
                         label = { Text("Nazwa wydarzenia") },
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(8.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = MaterialTheme.colorScheme.primary,
+                            unfocusedBorderColor = MaterialTheme.colorScheme.outline
+                        )
                     )
-                    Spacer(modifier = Modifier.height(8.dp))
 
                     OutlinedTextField(
                         value = category,
                         onValueChange = { category = it },
                         label = { Text("Kategoria (opcjonalnie)") },
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(8.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = MaterialTheme.colorScheme.primary,
+                            unfocusedBorderColor = MaterialTheme.colorScheme.outline
+                        )
                     )
-                    Spacer(modifier = Modifier.height(8.dp))
 
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         OutlinedTextField(
@@ -574,24 +716,10 @@ fun HomeScreen(navController: NavController) {
                             label = { Text("Godzina (np. 14:30)") },
                             modifier = Modifier.weight(1f)
                         )
-                        IconButton(onClick = {
-                            val now = LocalTime.now()
-                            TimePickerDialog(
-                                context,
-                                { _, hour, minute ->
-                                    selectedTime = LocalTime.of(hour, minute)
-                                    timeText = selectedTime!!
-                                        .format(DateTimeFormatter.ofPattern("HH:mm"))
-                                },
-                                now.hour,
-                                now.minute,
-                                true
-                            ).show()
-                        }) {
+                        IconButton(onClick = { showTimePickerDialog = true }) {
                             Icon(Icons.Default.AccessTime, contentDescription = "Wybierz godzinę")
                         }
                     }
-                    Spacer(modifier = Modifier.height(8.dp))
 
                     Text("Wybierz kolor:", style = MaterialTheme.typography.bodyMedium)
                     ColorPickerRow(
@@ -599,11 +727,11 @@ fun HomeScreen(navController: NavController) {
                         selectedColor = chosenColor
                     )
 
-                    // Parsuj ręcznie wpisaną godzinę
+                    // Parsujemy "HH:mm"
                     LaunchedEffect(timeText) {
                         selectedTime = try {
                             LocalTime.parse(timeText, DateTimeFormatter.ofPattern("HH:mm"))
-                        } catch (e: Exception) {
+                        } catch (_: Exception) {
                             null
                         }
                     }
@@ -611,42 +739,47 @@ fun HomeScreen(navController: NavController) {
             },
             confirmButton = {
                 Button(onClick = {
-                    if (editingDay == null) {
+                    if (editingDay == null && editingEvent == null) {
                         Toast.makeText(context, "Nie wybrano dnia!", Toast.LENGTH_SHORT).show()
                         return@Button
                     }
                     if (activityTitle.isBlank()) {
-                        Toast.makeText(context, "Uzupełnij opis!", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, "Uzupełnij nazwę wydarzenia!", Toast.LENGTH_SHORT).show()
                         return@Button
                     }
 
-                    val currentMonthMap = currentUserMap.getOrPut(currentYearMonth) {
-                        mutableStateMapOf()
-                    }
-
+                    // Dodaj nowe
                     if (editingEvent == null) {
-                        // Dodawanie nowego
-                        val newActivity = ActivityData(
-                            title = activityTitle,
-                            color = chosenColor,
-                            category = category.ifBlank { null },
-                            time = selectedTime
+                        val dataMap = hashMapOf(
+                            "userId" to userId,
+                            "title" to activityTitle,
+                            "category" to (category.ifBlank { null } ?: ""),
+                            "time" to (selectedTime?.format(DateTimeFormatter.ofPattern("HH:mm")) ?: null),
+                            "color" to chosenColor.toArgb(),
+                            "timestamp" to System.currentTimeMillis(),
+                            "createdAt" to Date(),
+                            "year" to currentYearMonth.year,
+                            "month" to currentYearMonth.monthValue,
+                            "day" to editingDay!!
                         )
-                        val dayList = currentMonthMap.getOrPut(editingDay!!) {
-                            mutableStateListOf()
-                        }
-                        dayList.add(newActivity)
-                        Toast.makeText(context, "Dodano: $activityTitle", Toast.LENGTH_SHORT).show()
+                        db.collection("events")
+                            .add(dataMap)
+                            .addOnSuccessListener {
+                                Toast.makeText(context, "Dodano: $activityTitle", Toast.LENGTH_SHORT).show()
+                            }
+                            .addOnFailureListener { e ->
+                                Toast.makeText(context, "Błąd zapisu: ${e.message}", Toast.LENGTH_SHORT).show()
+                            }
                     } else {
-                        // Edycja
+                        // Edycja lokalna
                         editingEvent!!.title = activityTitle
                         editingEvent!!.color = chosenColor
                         editingEvent!!.category = category.ifBlank { null }
                         editingEvent!!.time = selectedTime
-                        Toast.makeText(context, "Zaktualizowano: $activityTitle", Toast.LENGTH_SHORT).show()
+
+                        Toast.makeText(context, "Zaktualizowano: $activityTitle (lokalnie)", Toast.LENGTH_SHORT).show()
                     }
 
-                    // Reset
                     editingEvent = null
                     editingDay = null
                     activityTitle = ""
@@ -660,7 +793,7 @@ fun HomeScreen(navController: NavController) {
                 }
             },
             dismissButton = {
-                Button(onClick = {
+                TextButton(onClick = {
                     editingEvent = null
                     editingDay = null
                     activityTitle = ""
@@ -675,17 +808,28 @@ fun HomeScreen(navController: NavController) {
             },
             properties = DialogProperties()
         )
+
+        if (showTimePickerDialog) {
+            TimePickerDialog(
+                context,
+                { _, hour, minute ->
+                    val localTime = LocalTime.of(hour, minute)
+                    timeText = localTime.format(DateTimeFormatter.ofPattern("HH:mm"))
+                    showTimePickerDialog = false
+                },
+                selectedTime?.hour ?: 12,
+                selectedTime?.minute ?: 0,
+                true
+            ).show()
+        }
     }
 }
 
-// ------------------------- DODATKOWE KOMPONENTY --------------------------
-
-// Pojedyncza "komórka" dnia w kalendarzu
+// ----------------- KOMPONENT: Komórka jednego dnia w kalendarzu -----------------
 @Composable
 fun DayCell(
     day: Int,
     activities: List<ActivityData>,
-    backgroundColor: Color,
     currentYearMonth: YearMonth,
     onClick: () -> Unit
 ) {
@@ -695,30 +839,35 @@ fun DayCell(
                     today.monthValue == currentYearMonth.monthValue &&
                     today.dayOfMonth == day
             )
-    val finalColor = if (isCurrentDay) Color.Red else backgroundColor
-    val borderColor = if (backgroundColor == Color.White) Color.LightGray else Color.Transparent
     val borderWidth = if (isCurrentDay) 2.dp else 1.dp
+    val borderColor = if (isCurrentDay) MaterialTheme.colorScheme.primary else Color.LightGray
+    val hasActivities = activities.isNotEmpty()
 
     Box(
         modifier = Modifier
             .aspectRatio(1f)
-            .clip(CircleShape)
-            .background(finalColor)
-            .border(borderWidth, if (isCurrentDay) Color.Red else borderColor, CircleShape)
-            .clickable { onClick() },
+            .border(width = borderWidth, color = borderColor, shape = RoundedCornerShape(8.dp))
+            .clickable { onClick() }
+            .padding(2.dp),
         contentAlignment = Alignment.Center
     ) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
-            modifier = Modifier.padding(6.dp)
+            verticalArrangement = Arrangement.Center
         ) {
-            Text(day.toString(), fontWeight = FontWeight.Bold)
-            if (activities.isNotEmpty()) {
-                // Dla przykładu pokazujemy tytuł ostatniego wydarzenia
-                Text(
-                    text = activities.last().title,
-                    style = MaterialTheme.typography.bodySmall,
-                    maxLines = 1
+            Text(
+                text = day.toString(),
+                color = if (isCurrentDay) MaterialTheme.colorScheme.primary else Color.Black,
+                fontWeight = if (isCurrentDay) FontWeight.Bold else FontWeight.Normal,
+                style = MaterialTheme.typography.bodySmall
+            )
+            if (hasActivities) {
+                Spacer(modifier = Modifier.height(1.dp))
+                Box(
+                    modifier = Modifier
+                        .size(4.dp)
+                        .clip(CircleShape)
+                        .background(activities.first().color)
                 )
             }
         }
@@ -740,127 +889,26 @@ fun MonthYearBar(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(Color(0xFFFAF4F0))
-            .padding(horizontal = 8.dp, vertical = 4.dp),
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .padding(horizontal = 4.dp, vertical = 2.dp), // minimalne marginesy
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
         IconButton(onClick = onPreviousMonth) {
             Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Poprzedni miesiąc")
         }
-
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            var showMonthDialog by remember { mutableStateOf(false) }
-            var showYearDialog by remember { mutableStateOf(false) }
-
-            Text(
-                text = monthName,
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.clickable { showMonthDialog = true },
-                textAlign = TextAlign.Center
-            )
-            Spacer(modifier = Modifier.width(8.dp))
-            Text(
-                text = year.toString(),
-                style = MaterialTheme.typography.bodyLarge,
-                modifier = Modifier.clickable { showYearDialog = true },
-                textAlign = TextAlign.Center
-            )
-
-            if (showMonthDialog) {
-                ChooseMonthDialog(
-                    onDismiss = { showMonthDialog = false },
-                    onMonthSelected = {
-                        onMonthChange(it)
-                        showMonthDialog = false
-                    }
-                )
-            }
-            if (showYearDialog) {
-                ChooseYearDialog(
-                    currentYear = year,
-                    onDismiss = { showYearDialog = false },
-                    onYearSelected = {
-                        onYearChange(it)
-                        showYearDialog = false
-                    }
-                )
-            }
-        }
-
+        Text(
+            text = "$monthName $year",
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.Bold
+        )
         IconButton(onClick = onNextMonth) {
             Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = "Następny miesiąc")
         }
     }
 }
 
-// Dialog z listą miesięcy
-@Composable
-fun ChooseMonthDialog(
-    onDismiss: () -> Unit,
-    onMonthSelected: (Int) -> Unit
-) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Wybierz miesiąc") },
-        text = {
-            Column {
-                (1..12).forEach { monthNumber ->
-                    val monthName = polishMonthNames[monthNumber] ?: ""
-                    Text(
-                        text = monthName,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 8.dp)
-                            .clickable { onMonthSelected(monthNumber) }
-                    )
-                }
-            }
-        },
-        confirmButton = {},
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Anuluj")
-            }
-        }
-    )
-}
-
-// Dialog z listą lat w zakresie +/- 5 od bieżącego
-@Composable
-fun ChooseYearDialog(
-    currentYear: Int,
-    onDismiss: () -> Unit,
-    onYearSelected: (Int) -> Unit
-) {
-    val yearRange = (currentYear - 5)..(currentYear + 5)
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Wybierz rok") },
-        text = {
-            Column {
-                for (year in yearRange) {
-                    Text(
-                        text = year.toString(),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 8.dp)
-                            .clickable { onYearSelected(year) }
-                    )
-                }
-            }
-        },
-        confirmButton = {},
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Anuluj")
-            }
-        }
-    )
-}
-
-// Paleta kolorów
+// Rząd kolorów
 @Composable
 fun ColorPickerRow(
     onColorSelected: (Color) -> Unit,
@@ -896,7 +944,6 @@ fun ColorPickerRow(
     }
 }
 
-// Funkcja wylogowania
 fun logout() {
     auth.signOut()
 }

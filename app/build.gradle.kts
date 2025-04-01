@@ -63,6 +63,7 @@ dependencies {
     implementation(libs.androidx.credentials.play.services.auth)
     implementation (libs.google.googleid)
     implementation (libs.play.services.auth.v2070)
+    implementation ("com.google.firebase:firebase-firestore-ktx:24.4.4")
 
 
     // Jetpack Compose
@@ -71,7 +72,8 @@ dependencies {
     implementation(libs.androidx.ui)
     implementation(libs.androidx.ui.graphics)
     implementation(libs.androidx.ui.tooling.preview)
-    implementation("androidx.compose.material3:material3")
+    implementation("androidx.compose.material3:material3:1.2.0")
+    implementation("androidx.compose.material3:material3-window-size-class:1.2.0")
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.navigation.compose)
     implementation(libs.coil.compose)
