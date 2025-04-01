@@ -36,12 +36,18 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.AccessTime
+import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.Divider
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -86,13 +92,26 @@ import java.util.Date
 
 // ---------------------- MODELE i OBIEKT PRZECHOWUJĄCY DANE ----------------------
 
+// Predefiniowane kategorie wydarzeń
+val defaultCategories = listOf(
+    "Sprzątanie",
+    "Zakupy",
+    "Gotowanie",
+    "Naprawa",
+    "Opieka nad zwierzętami",
+    "Pranie",
+    "Inne"
+)
+
 data class ActivityData(
     var docId: String? = null, // do usuwania/edycji w Firestore
     var title: String,
     var color: Color,
     var category: String? = null,
     var time: LocalTime? = null,
-    var timestamp: Long = System.currentTimeMillis()
+    var timestamp: Long = System.currentTimeMillis(),
+    var hasNotification: Boolean = false,
+    var notificationTime: Int? = null // Czas powiadomienia w minutach przed wydarzeniem
 )
 
 object CalendarEventsManager {
@@ -166,6 +185,7 @@ fun HomeScreen(navController: NavController) {
     var category by remember { mutableStateOf("") }
     var selectedTime by remember { mutableStateOf<LocalTime?>(null) }
     var timeText by remember { mutableStateOf("") }
+    var hasNotification by remember { mutableStateOf(false)} //Dodano dla powiadomień
 
     var showDayEventsDialog by remember { mutableStateOf(false) }
     var dayEvents by remember { mutableStateOf(emptyList<ActivityData>()) }
@@ -208,6 +228,7 @@ fun HomeScreen(navController: NavController) {
 
                     val timestamp = doc.getTimestamp("createdAt")?.toDate()?.time
                         ?: System.currentTimeMillis()
+                    val hasNotification = doc.getBoolean("hasNotification") ?: false
 
                     val activityData = ActivityData(
                         docId = doc.id,
@@ -215,7 +236,8 @@ fun HomeScreen(navController: NavController) {
                         color = color,
                         category = doc.getString("category"),
                         time = localTime,
-                        timestamp = timestamp
+                        timestamp = timestamp,
+                        hasNotification = hasNotification
                     )
 
                     val ym = YearMonth.of(year, month)
@@ -357,7 +379,7 @@ fun HomeScreen(navController: NavController) {
                         verticalArrangement = Arrangement.spacedBy(4.dp),
                         horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
-                        itemsIndexed(calendarCells) { _, day ->
+                        itemsIndexed(calendarCells) { index, day ->
                             if (day == null) {
                                 Spacer(modifier = Modifier.aspectRatio(1f))
                             } else {
@@ -367,20 +389,15 @@ fun HomeScreen(navController: NavController) {
                                     activities = dayActivities,
                                     currentYearMonth = currentYearMonth,
                                     onClick = {
-                                        if (dayActivities.isEmpty()) {
-                                            editingEvent = null
-                                            editingDay = day
-                                            activityTitle = ""
-                                            category = ""
-                                            chosenColor = Color(0xFFDCE775)
-                                            selectedTime = null
-                                            timeText = ""
-                                            showEventDialog = true
-                                        } else {
-                                            selectedDay = day
-                                            dayEvents = dayActivities
-                                            showDayEventsDialog = true
-                                        }
+                                        editingDay = day
+                                        editingEvent = null
+                                        activityTitle = ""
+                                        category = ""
+                                        chosenColor = Color(0xFFDCE775)
+                                        selectedTime = null
+                                        timeText = ""
+                                        hasNotification = false
+                                        showEventDialog = true
                                     }
                                 )
                             }
@@ -433,6 +450,7 @@ fun HomeScreen(navController: NavController) {
                                     timeText = event.time?.format(
                                         DateTimeFormatter.ofPattern("HH:mm")
                                     ) ?: ""
+                                    hasNotification = event.hasNotification //Dodano dla powiadomień
                                     showEventDialog = true
                                 }
                                 .padding(horizontal = 8.dp, vertical = 4.dp),
@@ -440,60 +458,78 @@ fun HomeScreen(navController: NavController) {
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(12.dp)
-                                        .clip(CircleShape)
-                                        .background(event.color)
-                                )
-                                Spacer(modifier = Modifier.width(12.dp))
-                                Column {
-                                    Text(
-                                        text = event.title,
-                                        style = MaterialTheme.typography.bodyLarge,
-                                        color = Color.Black
-                                    )
-                                    event.category?.let {
-                                        Text(
-                                            text = it,
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(12.dp)
+                                                    .clip(CircleShape)
+                                                    .background(event.color)
+                                            )
+                                            Spacer(modifier = Modifier.width(12.dp))
+                                            Column {
+                                                Text(
+                                                    text = event.title,
+                                                    style = MaterialTheme.typography.bodyLarge,
+                                                    color = Color.Black
+                                                )
+                                                Row(
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                                    modifier = Modifier.fillMaxWidth()
+                                                ) {
+                                                    event.category?.let {
+                                                        Text(
+                                                            text = it,
+                                                            style = MaterialTheme.typography.bodySmall,
+                                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                        )
+                                                    }
+                                                    Row(
+                                                        verticalAlignment = Alignment.CenterVertically,
+                                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                                    ) {
+                                                        if (event.hasNotification) {
+                                                            Box(
+                                                                modifier = Modifier
+                                                                    .size(8.dp)
+                                                                    .background(Color.Red, CircleShape)
+                                                            )
+                                                        }
+                                                        IconButton(
+                                                            onClick = { deleteEvent(event, context) },
+                                                            modifier = Modifier.size(24.dp)
+                                                        ) {
+                                                            Icon(
+                                                                painter = painterResource(id = R.drawable.ic_delete),
+                                                                contentDescription = "Usuń wydarzenie",
+                                                                tint = Color.Gray,
+                                                                modifier = Modifier.size(20.dp)
+                                                            )
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                    IconButton(
+                                        onClick = { deleteEvent(event, context) }
+                                    ) {
+                                        Icon(
+                                            painter = painterResource(id = R.drawable.ic_delete),
+                                            contentDescription = "Usuń wydarzenie",
+                                            tint = Color.Black
                                         )
                                     }
-                                }
-                            }
-
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                event.time?.let {
-                                    Text(
-                                        text = it.format(DateTimeFormatter.ofPattern("HH:mm")),
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = Color.Gray,
-                                        modifier = Modifier.padding(end = 8.dp)
-                                    )
-                                }
-                                IconButton(onClick = {
-                                    val docId = event.docId
-                                    if (docId != null) {
-                                        db.collection("events").document(docId).delete()
-                                            .addOnSuccessListener {
-                                                Toast.makeText(context, "Wydarzenie usunięte", Toast.LENGTH_SHORT).show()
-                                            }
-                                            .addOnFailureListener { e ->
-                                                Toast.makeText(context, "Błąd usuwania: ${e.message}", Toast.LENGTH_SHORT).show()
-                                            }
-                                    }
-                                    // Usuń lokalnie
-                                    currentMonthActivities.values.forEach { list ->
-                                        list.remove(event)
-                                    }
-                                }) {
-                                    Icon(
-                                        imageVector = Icons.Default.Delete,
-                                        contentDescription = "Usuń",
-                                        tint = Color.Black,
-                                        modifier = Modifier.size(20.dp)
-                                    )
                                 }
                             }
                         }
@@ -570,6 +606,7 @@ fun HomeScreen(navController: NavController) {
                                                 timeText = event.time?.format(
                                                     DateTimeFormatter.ofPattern("HH:mm")
                                                 ) ?: ""
+                                                hasNotification = event.hasNotification //Dodano dla powiadomień
                                                 showEventDialog = true
                                                 showDayEventsDialog = false
                                             }
@@ -597,24 +634,7 @@ fun HomeScreen(navController: NavController) {
                                                 currentMonthActivities.remove(selectedDay)
                                             }
                                             // Usuń w Firestore
-                                            val docId = event.docId
-                                            if (docId != null) {
-                                                db.collection("events").document(docId).delete()
-                                                    .addOnSuccessListener {
-                                                        Toast.makeText(
-                                                            context,
-                                                            "Wydarzenie usunięte",
-                                                            Toast.LENGTH_SHORT
-                                                        ).show()
-                                                    }
-                                                    .addOnFailureListener { e ->
-                                                        Toast.makeText(
-                                                            context,
-                                                            "Błąd usuwania: ${e.message}",
-                                                            Toast.LENGTH_SHORT
-                                                        ).show()
-                                                    }
-                                            }
+                                            deleteEvent(event, context)
                                             showDayEventsDialog = false
                                         },
                                         modifier = Modifier.align(Alignment.TopEnd)
@@ -639,6 +659,7 @@ fun HomeScreen(navController: NavController) {
                         chosenColor = Color(0xFFDCE775)
                         selectedTime = null
                         timeText = ""
+                        hasNotification = false //Dodano dla powiadomień
                         showEventDialog = true
                         showDayEventsDialog = false
                     }) {
@@ -697,17 +718,127 @@ fun HomeScreen(navController: NavController) {
                         )
                     )
 
-                    OutlinedTextField(
-                        value = category,
-                        onValueChange = { category = it },
-                        label = { Text("Kategoria (opcjonalnie)") },
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(8.dp),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = MaterialTheme.colorScheme.primary,
-                            unfocusedBorderColor = MaterialTheme.colorScheme.outline
+                    var expanded by remember { mutableStateOf(false) }
+                    var customCategory by remember { mutableStateOf(false) }
+
+                    if (!customCategory) {
+                        ExposedDropdownMenuBox(
+                            expanded = expanded,
+                            onExpandedChange = { expanded = it },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            OutlinedTextField(
+                                value = category,
+                                onValueChange = {},
+                                readOnly = true,
+                                label = { Text("Wybierz kategorię") },
+                                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+                                modifier = Modifier
+                                    .menuAnchor()
+                                    .fillMaxWidth(),
+                                shape = RoundedCornerShape(8.dp)
+                            )
+                            ExposedDropdownMenu(
+                                expanded = expanded,
+                                onDismissRequest = { expanded = false }
+                            ) {
+                                defaultCategories.forEach { option ->
+                                    DropdownMenuItem(
+                                        text = { Text(option) },
+                                        onClick = {
+                                            category = option
+                                            expanded = false
+                                        }
+                                    )
+                                }
+                                Divider()
+                                DropdownMenuItem(
+                                    text = { Text("Własna kategoria") },
+                                    onClick = {
+                                        customCategory = true
+                                        expanded = false
+                                    }
+                                )
+                            }
+                        }
+                    } else {
+                        OutlinedTextField(
+                            value = category,
+                            onValueChange = { category = it },
+                            label = { Text("Własna kategoria") },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(8.dp),
+                            trailingIcon = {
+                                IconButton(onClick = {
+                                    customCategory = false
+                                    category = ""
+                                }) {
+                                    Icon(Icons.Default.Clear, "Powrót do listy")
+                                }
+                            }
                         )
-                    )
+                    }
+
+                    var notificationTimeExpanded by remember { mutableStateOf(false) }
+                    var notificationMinutes by remember { mutableStateOf<Int?>(null) }
+
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Checkbox(
+                            checked = hasNotification,
+                            onCheckedChange = { checked ->
+                                hasNotification = checked
+                                if (!checked) notificationMinutes = null
+                            }
+                        )
+                        Text("Powiadomienie")
+                        if (hasNotification) {
+                            Spacer(Modifier.width(8.dp))
+                            ExposedDropdownMenuBox(
+                                expanded = notificationTimeExpanded,
+                                onExpandedChange = { notificationTimeExpanded = it }
+                            ) {
+                                OutlinedTextField(
+                                    value = when(notificationMinutes) {
+                                        5 -> "5 minut przed"
+                                        15 -> "15 minut przed"
+                                        30 -> "30 minut przed"
+                                        60 -> "1 godzina przed"
+                                        1440 -> "1 dzień przed"
+                                        else -> "Wybierz czas"
+                                    },
+                                    onValueChange = {},
+                                    readOnly = true,
+                                    modifier = Modifier
+                                        .menuAnchor()
+                                        .width(150.dp),
+                                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = notificationTimeExpanded) }
+                                )
+                                ExposedDropdownMenu(
+                                    expanded = notificationTimeExpanded,
+                                    onDismissRequest = { notificationTimeExpanded = false }
+                                ) {
+                                    listOf(
+                                        5 to "5 minut przed",
+                                        15 to "15 minut przed",
+                                        30 to "30 minut przed",
+                                        60 to "1 godzina przed",
+                                        1440 to "1 dzień przed"
+                                    ).forEach { (minutes, label) ->
+                                        DropdownMenuItem(
+                                            text = { Text(label) },
+                                            onClick = {
+                                                notificationMinutes = minutes
+                                                notificationTimeExpanded = false
+                                            }
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
 
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         OutlinedTextField(
@@ -719,6 +850,12 @@ fun HomeScreen(navController: NavController) {
                         IconButton(onClick = { showTimePickerDialog = true }) {
                             Icon(Icons.Default.AccessTime, contentDescription = "Wybierz godzinę")
                         }
+                    }
+
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("Powiadomienie:", style = MaterialTheme.typography.bodyMedium)
+                        Spacer(Modifier.width(8.dp))
+                        androidx.compose.material3.Checkbox(checked = hasNotification, onCheckedChange = { hasNotification = it })
                     }
 
                     Text("Wybierz kolor:", style = MaterialTheme.typography.bodyMedium)
@@ -760,7 +897,8 @@ fun HomeScreen(navController: NavController) {
                             "createdAt" to Date(),
                             "year" to currentYearMonth.year,
                             "month" to currentYearMonth.monthValue,
-                            "day" to editingDay!!
+                            "day" to editingDay!!,
+                            "hasNotification" to hasNotification //Dodano dla powiadomień
                         )
                         db.collection("events")
                             .add(dataMap)
@@ -776,6 +914,7 @@ fun HomeScreen(navController: NavController) {
                         editingEvent!!.color = chosenColor
                         editingEvent!!.category = category.ifBlank { null }
                         editingEvent!!.time = selectedTime
+                        editingEvent!!.hasNotification = hasNotification //Dodano dla powiadomień
 
                         Toast.makeText(context, "Zaktualizowano: $activityTitle (lokalnie)", Toast.LENGTH_SHORT).show()
                     }
@@ -787,6 +926,7 @@ fun HomeScreen(navController: NavController) {
                     category = ""
                     selectedTime = null
                     timeText = ""
+                    hasNotification = false //Dodano dla powiadomień
                     showEventDialog = false
                 }) {
                     Text("Zapisz")
@@ -801,6 +941,7 @@ fun HomeScreen(navController: NavController) {
                     category = ""
                     selectedTime = null
                     timeText = ""
+                    hasNotification = false //Dodano dla powiadomień
                     showEventDialog = false
                 }) {
                     Text("Anuluj")
@@ -827,11 +968,10 @@ fun HomeScreen(navController: NavController) {
 
 // ----------------- KOMPONENT: Komórka jednego dnia w kalendarzu -----------------
 @Composable
-fun DayCell(
-    day: Int,
-    activities: List<ActivityData>,
-    currentYearMonth: YearMonth,
-    onClick: () -> Unit
+fun DayCell(day: Int,
+            activities: List<ActivityData>,
+            currentYearMonth:YearMonth,
+            onClick: () -> Unit
 ) {
     val today = LocalDate.now()
     val isCurrentDay = (
@@ -898,8 +1038,7 @@ fun MonthYearBar(
             Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Poprzedni miesiąc")
         }
         Text(
-            text = "$monthName $year",
-            style = MaterialTheme.typography.titleSmall,
+            text = "$monthName $year",            style = MaterialTheme.typography.titleSmall,
             fontWeight = FontWeight.Bold
         )
         IconButton(onClick = onNextMonth) {
@@ -946,4 +1085,17 @@ fun ColorPickerRow(
 
 fun logout() {
     auth.signOut()
+}
+
+fun deleteEvent(event: ActivityData, context: android.content.Context) {
+    val docId = event.docId
+    if (docId != null) {
+        db.collection("events").document(docId).delete()
+            .addOnSuccessListener {
+                Toast.makeText(context, "Wydarzenie usunięte", Toast.LENGTH_SHORT).show()
+            }
+            .addOnFailureListener { e ->
+                Toast.makeText(context, "Błąd usuwania: ${e.message}", Toast.LENGTH_SHORT).show()
+            }
+    }
 }

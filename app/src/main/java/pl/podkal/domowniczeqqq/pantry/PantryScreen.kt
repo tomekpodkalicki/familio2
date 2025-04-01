@@ -32,6 +32,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Remove
@@ -79,6 +80,7 @@ import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.ktx.Firebase
 import pl.podkal.domowniczeq.R
 import pl.podkal.domowniczeqqq.navigation.BottomNavBar
+import pl.podkal.domowniczeqqq.shopping.ShoppingItem
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -86,6 +88,10 @@ import java.util.Locale
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PantryScreen(navController: NavController) {
+    var toastMessage by remember { mutableStateOf("") }
+    var showSuccessToast by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+
     val appBarColor = Color(0xFF3DD1C6)
     val backgroundColor = Color(0xFFF8F8F8)
 
@@ -97,15 +103,12 @@ fun PantryScreen(navController: NavController) {
     var showSortMenu by remember { mutableStateOf(false) }
     var currentSort by remember { mutableStateOf(SortOption.NAME) }
     var currentFilter by remember { mutableStateOf<String?>(null) }
-    var currentLocation by remember { mutableStateOf("Spiżarnia") } // Default location is Pantry
-    var showSuccessToast by remember { mutableStateOf(false) }
-    var toastMessage by remember { mutableStateOf("") }
+    var currentLocation by remember { mutableStateOf("Lodówka") }
 
-    val context = LocalContext.current
     val db = FirebaseFirestore.getInstance()
     val userId = Firebase.auth.currentUser?.uid.orEmpty()
 
-    // Setup the firestore listener
+    // Nasłuchiwacz Firestore
     DisposableEffect(userId) {
         if (userId.isBlank()) {
             pantryItems = emptyList()
@@ -118,7 +121,6 @@ fun PantryScreen(navController: NavController) {
                 if (error != null) {
                     return@addSnapshotListener
                 }
-
                 val temp = mutableListOf<PantryItem>()
                 snapshot?.documents?.forEach { doc ->
                     doc.toObject(PantryItem::class.java)?.let {
@@ -129,12 +131,10 @@ fun PantryScreen(navController: NavController) {
                 pantryItems = temp
             }
 
-        onDispose {
-            registration.remove()
-        }
+        onDispose { registration.remove() }
     }
 
-    // Handle success toast
+    // Obsługa wyświetlania komunikatu (toast)
     LaunchedEffect(showSuccessToast) {
         if (showSuccessToast) {
             Toast.makeText(context, toastMessage, Toast.LENGTH_SHORT).show()
@@ -150,7 +150,7 @@ fun PantryScreen(navController: NavController) {
         val matchesSearch = item.name.contains(searchQuery, ignoreCase = true) ||
                 item.description.contains(searchQuery, ignoreCase = true)
         val matchesCategory = currentFilter == null || item.category == currentFilter
-        val matchesLocation = item.location == currentLocation // Fixed to current location
+        val matchesLocation = item.location == currentLocation
         matchesSearch && matchesCategory && matchesLocation
     }
 
@@ -176,9 +176,7 @@ fun PantryScreen(navController: NavController) {
                         Text("Moja $currentLocation", color = Color.White)
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = appBarColor
-                ),
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = appBarColor),
                 actions = {
                     IconButton(onClick = { isGridView = !isGridView }) {
                         Icon(
@@ -187,7 +185,6 @@ fun PantryScreen(navController: NavController) {
                             tint = Color.White
                         )
                     }
-
                     Box {
                         IconButton(onClick = { showSortMenu = !showSortMenu }) {
                             Icon(
@@ -196,7 +193,6 @@ fun PantryScreen(navController: NavController) {
                                 tint = Color.White
                             )
                         }
-
                         DropdownMenu(
                             expanded = showSortMenu,
                             onDismissRequest = { showSortMenu = false }
@@ -206,7 +202,6 @@ fun PantryScreen(navController: NavController) {
                                 modifier = Modifier.padding(8.dp),
                                 fontWeight = FontWeight.Bold
                             )
-
                             DropdownMenuItem(
                                 text = { Text("Nazwy") },
                                 onClick = {
@@ -214,7 +209,6 @@ fun PantryScreen(navController: NavController) {
                                     showSortMenu = false
                                 }
                             )
-
                             DropdownMenuItem(
                                 text = { Text("Daty ważności") },
                                 onClick = {
@@ -222,7 +216,6 @@ fun PantryScreen(navController: NavController) {
                                     showSortMenu = false
                                 }
                             )
-
                             DropdownMenuItem(
                                 text = { Text("Ilości") },
                                 onClick = {
@@ -230,15 +223,12 @@ fun PantryScreen(navController: NavController) {
                                     showSortMenu = false
                                 }
                             )
-
                             HorizontalDivider()
-
                             Text(
                                 "Filtruj według kategorii:",
                                 modifier = Modifier.padding(8.dp),
                                 fontWeight = FontWeight.Bold
                             )
-
                             DropdownMenuItem(
                                 text = { Text("Wszystkie kategorie") },
                                 onClick = {
@@ -246,7 +236,6 @@ fun PantryScreen(navController: NavController) {
                                     showSortMenu = false
                                 }
                             )
-
                             categories.forEach { category ->
                                 DropdownMenuItem(
                                     text = { Text(category) },
@@ -256,8 +245,6 @@ fun PantryScreen(navController: NavController) {
                                     }
                                 )
                             }
-
-                            // Location filtering has been removed to simplify interface
                         }
                     }
                 }
@@ -276,15 +263,14 @@ fun PantryScreen(navController: NavController) {
                     tint = Color.White
                 )
             }
-        },
-
-        ) { paddingValues ->
+        }
+    ) { paddingValues ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
         ) {
-            // Search bar
+            // Pasek wyszukiwania
             SearchBar(
                 searchQuery = searchQuery,
                 onSearchQueryChange = { searchQuery = it },
@@ -292,27 +278,21 @@ fun PantryScreen(navController: NavController) {
                     .fillMaxWidth()
                     .padding(16.dp)
             )
-
-            // Location chips for navigating between different storage locations
+            // Chipy lokalizacji
             LocationChips(
                 locations = listOf("Lodówka", "Spiżarnia", "Apteczka"),
                 selectedLocation = currentLocation,
-                onLocationSelected = { location ->
-                    currentLocation = location
-                },
+                onLocationSelected = { location -> currentLocation = location },
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp)
             )
-
-            // Category chips - only show for the current location
+            // Chipy kategorii – tylko dla aktualnej lokalizacji
             if (categories.isNotEmpty()) {
-                // Get categories for current location
                 val locationCategories = pantryItems
                     .filter { it.location == currentLocation }
                     .mapNotNull { it.category }
                     .distinct()
-
                 if (locationCategories.isNotEmpty()) {
                     CategoryChips(
                         categories = locationCategories,
@@ -326,7 +306,6 @@ fun PantryScreen(navController: NavController) {
                     )
                 }
             }
-
             if (sortedItems.isEmpty()) {
                 Box(
                     modifier = Modifier.fillMaxSize(),
@@ -408,31 +387,36 @@ fun PantryScreen(navController: NavController) {
                 },
                 onSave = { newItem ->
                     if (selectedItem != null) {
-                        // Update existing item
+                        // Aktualizacja istniejącego produktu
                         db.collection("pantry_items").document(selectedItem!!.id)
                             .set(newItem.copy(userId = userId))
                         toastMessage = "Produkt został zaktualizowany"
                         showSuccessToast = true
                     } else {
-                        // Check for duplicate items by name
+                        // Sprawdź czy istnieje już produkt o tej samej nazwie
                         val existingItem = pantryItems.find {
                             it.name.equals(newItem.name, ignoreCase = true) &&
                                     it.location == newItem.location
                         }
-
                         if (existingItem != null) {
-                            // Update quantity of existing item
+                            // Aktualizacja ilości istniejącego produktu
                             val updatedQuantity = existingItem.quantity + newItem.quantity
                             db.collection("pantry_items").document(existingItem.id)
                                 .update("quantity", updatedQuantity)
                             toastMessage = "Zaktualizowano ilość istniejącego produktu"
                             showSuccessToast = true
                         } else {
-                            // Add new item
+                            // Dodanie nowego produktu
                             db.collection("pantry_items")
                                 .add(newItem.copy(userId = userId))
-                            toastMessage = "Dodano nowy produkt"
-                            showSuccessToast = true
+                                .addOnSuccessListener {
+                                    toastMessage = "Dodano nowy produkt"
+                                    showSuccessToast = true
+                                }
+                                .addOnFailureListener {
+                                    toastMessage = "Błąd podczas dodawania produktu"
+                                    showSuccessToast = true
+                                }
                         }
                     }
                     showAddDialog = false
@@ -443,6 +427,9 @@ fun PantryScreen(navController: NavController) {
     }
 }
 
+// -------------------------------------------------
+//                   SearchBar
+// -------------------------------------------------
 @Composable
 fun SearchBar(
     searchQuery: String,
@@ -478,6 +465,9 @@ fun SearchBar(
     )
 }
 
+// -------------------------------------------------
+//                 CategoryChips
+// -------------------------------------------------
 @Composable
 fun CategoryChips(
     categories: List<String>,
@@ -490,7 +480,6 @@ fun CategoryChips(
     ) {
         categories.forEach { category ->
             val isSelected = category == selectedCategory
-
             Surface(
                 color = if (isSelected) Color(0xFF3DD1C6) else Color.White,
                 shape = RoundedCornerShape(16.dp),
@@ -509,12 +498,14 @@ fun CategoryChips(
                     modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
                 )
             }
-
             Spacer(modifier = Modifier.width(4.dp))
         }
     }
 }
 
+// -------------------------------------------------
+//               PantryItemCard
+// -------------------------------------------------
 @Composable
 fun PantryItemCard(
     pantryItem: PantryItem,
@@ -522,6 +513,10 @@ fun PantryItemCard(
     onQuantityChange: ((PantryItem, Double) -> Unit)? = null,
     onDelete: ((PantryItem) -> Unit)? = null
 ) {
+    var localToastMessage by remember { mutableStateOf("") }
+    var localShowSuccessToast by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -533,6 +528,7 @@ fun PantryItemCard(
             modifier = Modifier.padding(16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            // Ikonka z pierwszą literą
             Box(
                 modifier = Modifier
                     .size(40.dp)
@@ -546,22 +542,16 @@ fun PantryItemCard(
                     fontWeight = FontWeight.Bold
                 )
             }
-
             Spacer(modifier = Modifier.width(16.dp))
-
-            Column(
-                modifier = Modifier.weight(1f)
-            ) {
+            // Nazwa, kategoria i lokalizacja
+            Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = pantryItem.name,
                     fontWeight = FontWeight.Bold,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
-
-                Column(
-                    horizontalAlignment = Alignment.Start
-                ) {
+                Column(horizontalAlignment = Alignment.Start) {
                     pantryItem.category?.let { category ->
                         Text(
                             text = category,
@@ -569,7 +559,6 @@ fun PantryItemCard(
                             color = Color.Gray
                         )
                     }
-
                     Text(
                         text = pantryItem.location,
                         fontSize = 12.sp,
@@ -577,14 +566,13 @@ fun PantryItemCard(
                     )
                 }
             }
-
-            Column(
-                horizontalAlignment = Alignment.End
-            ) {
+            // Sekcja przycisków
+            Column(horizontalAlignment = Alignment.End) {
                 Row(
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    // Minus button
+                    // Przycisk zmniejszania ilości
                     if (onQuantityChange != null) {
                         IconButton(
                             onClick = {
@@ -594,31 +582,23 @@ fun PantryItemCard(
                             },
                             modifier = Modifier
                                 .size(32.dp)
-                                .background(
-                                    color = Color.LightGray.copy(alpha = 0.3f),
-                                    shape = CircleShape
-                                )
+                                .background(Color.LightGray.copy(alpha = 0.3f), shape = CircleShape)
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Remove,
                                 contentDescription = "Zmniejsz ilość",
-                                tint = Color(0xFFEA4335), // Red color for minus
+                                tint = Color(0xFFEA4335),
                                 modifier = Modifier.size(20.dp)
                             )
                         }
                     }
-
-                    Spacer(modifier = Modifier.width(16.dp))
-
+                    // Wyświetlanie ilości
                     Text(
                         text = "${pantryItem.quantity.toInt()} ${pantryItem.unit}",
                         fontWeight = FontWeight.Bold,
                         fontSize = 16.sp
                     )
-
-                    Spacer(modifier = Modifier.width(16.dp))
-
-                    // Plus button
+                    // Przycisk zwiększania ilości
                     if (onQuantityChange != null) {
                         IconButton(
                             onClick = {
@@ -626,45 +606,76 @@ fun PantryItemCard(
                             },
                             modifier = Modifier
                                 .size(32.dp)
-                                .background(
-                                    color = Color.LightGray.copy(alpha = 0.3f),
-                                    shape = CircleShape
-                                )
+                                .background(Color.LightGray.copy(alpha = 0.3f), shape = CircleShape)
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Add,
                                 contentDescription = "Zwiększ ilość",
-                                tint = Color(0xFF34A853), // Green color for plus
+                                tint = Color(0xFF34A853),
                                 modifier = Modifier.size(20.dp)
                             )
                         }
                     }
-
-                    Spacer(modifier = Modifier.width(16.dp))
-
-                    // Delete/Basket icon
-                    if (onDelete != null) {
-                        IconButton(
-                            onClick = {
-                                onDelete(pantryItem)
-                            },
-                            modifier = Modifier
-                                .size(32.dp)
-                                .background(
-                                    color = Color.LightGray.copy(alpha = 0.3f),
-                                    shape = CircleShape
-                                )
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.ShoppingCart,
-                                contentDescription = "Usuń produkt",
-                                tint = Color(0xFF3DD1C6),
-                                modifier = Modifier.size(20.dp)
+                    // Przycisk usuwania produktu
+                    IconButton(
+                        onClick = { onDelete?.invoke(pantryItem) },
+                        modifier = Modifier
+                            .size(32.dp)
+                            .background(Color.LightGray.copy(alpha = 0.3f), shape = CircleShape)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Delete,
+                            contentDescription = "Usuń",
+                            tint = Color(0xFFEA4335),
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                    // Przycisk przenoszenia do listy zakupowej
+                    IconButton(
+                        onClick = {
+                            val shoppingItem = ShoppingItem(
+                                id = "",
+                                userId = pantryItem.userId,
+                                name = pantryItem.name,
+                                category = pantryItem.category ?: "",
+                                quantity = pantryItem.quantity,
+                                unit = pantryItem.unit,
+                                isChecked = false
                             )
-                        }
+                            FirebaseFirestore.getInstance().collection("shopping_items")
+                                .add(shoppingItem)
+                                .addOnSuccessListener {
+                                    // Po udanym przeniesieniu usuwamy element z pantry
+                                    FirebaseFirestore.getInstance().collection("pantry_items")
+                                        .document(pantryItem.id)
+                                        .delete()
+                                        .addOnSuccessListener {
+                                            localToastMessage = "Przesunięto do listy zakupowej"
+                                            localShowSuccessToast = true
+                                        }
+                                        .addOnFailureListener {
+                                            localToastMessage = "Błąd podczas przenoszenia do listy zakupowej"
+                                            localShowSuccessToast = true
+                                        }
+                                }
+                                .addOnFailureListener {
+                                    localToastMessage = "Błąd podczas przenoszenia do listy zakupowej"
+                                    localShowSuccessToast = true
+                                }
+                        },
+                        modifier = Modifier
+                            .size(32.dp)
+                            .background(Color.LightGray.copy(alpha = 0.3f), shape = CircleShape)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.ShoppingCart,
+                            contentDescription = "Przenieś do listy zakupów",
+                            tint = Color(0xFF3DD1C6),
+                            modifier = Modifier.size(20.dp)
+                        )
                     }
                 }
-
+                // Data ważności
                 pantryItem.expiryDate?.let { expiryDate ->
                     formatDate(expiryDate)?.let { formattedDate ->
                         Text(
@@ -677,8 +688,19 @@ fun PantryItemCard(
             }
         }
     }
+    // Obsługa lokalnego toasta w karcie
+    LaunchedEffect(localShowSuccessToast) {
+        if (localShowSuccessToast) {
+            Toast.makeText(context, localToastMessage, Toast.LENGTH_SHORT).show()
+            kotlinx.coroutines.delay(2000)
+            localShowSuccessToast = false
+        }
+    }
 }
 
+// -------------------------------------------------
+//             PantryItemGridCard
+// -------------------------------------------------
 @Composable
 fun PantryItemGridCard(
     pantryItem: PantryItem,
@@ -686,6 +708,11 @@ fun PantryItemGridCard(
     onQuantityChange: ((PantryItem, Double) -> Unit)? = null,
     onDelete: ((PantryItem) -> Unit)? = null
 ) {
+    var toastMessage by remember { mutableStateOf("") }
+    var showSuccessToast by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+    val db = FirebaseFirestore.getInstance()
+
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -698,6 +725,7 @@ fun PantryItemGridCard(
             modifier = Modifier.padding(16.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
+            // Okrągłe tło z pierwszą literą nazwy
             Box(
                 modifier = Modifier
                     .size(60.dp)
@@ -712,9 +740,7 @@ fun PantryItemGridCard(
                     fontSize = 20.sp
                 )
             }
-
             Spacer(modifier = Modifier.height(8.dp))
-
             Text(
                 text = pantryItem.name,
                 fontWeight = FontWeight.Bold,
@@ -722,10 +748,7 @@ fun PantryItemGridCard(
                 overflow = TextOverflow.Ellipsis,
                 textAlign = TextAlign.Center
             )
-
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 pantryItem.category?.let { category ->
                     Text(
                         text = category,
@@ -734,7 +757,6 @@ fun PantryItemGridCard(
                         textAlign = TextAlign.Center
                     )
                 }
-
                 Text(
                     text = pantryItem.location,
                     fontSize = 12.sp,
@@ -742,16 +764,13 @@ fun PantryItemGridCard(
                     textAlign = TextAlign.Center
                 )
             }
-
             Spacer(modifier = Modifier.height(4.dp))
-
-            // Quantity with controls
+            // Sekcja ilości
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.Center,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                // Minus button
                 if (onQuantityChange != null) {
                     IconButton(
                         onClick = {
@@ -761,32 +780,24 @@ fun PantryItemGridCard(
                         },
                         modifier = Modifier
                             .size(32.dp)
-                            .background(
-                                color = Color.LightGray.copy(alpha = 0.3f),
-                                shape = CircleShape
-                            )
+                            .background(Color.LightGray.copy(alpha = 0.3f), shape = CircleShape)
                     ) {
                         Icon(
                             imageVector = Icons.Default.Remove,
                             contentDescription = "Zmniejsz ilość",
-                            tint = Color(0xFFEA4335), // Red color for minus
+                            tint = Color(0xFFEA4335),
                             modifier = Modifier.size(20.dp)
                         )
                     }
                 }
-
                 Spacer(modifier = Modifier.width(16.dp))
-
                 Text(
                     text = "${pantryItem.quantity.toInt()} ${pantryItem.unit}",
                     fontWeight = FontWeight.Bold,
                     textAlign = TextAlign.Center,
                     fontSize = 16.sp
                 )
-
                 Spacer(modifier = Modifier.width(16.dp))
-
-                // Plus button
                 if (onQuantityChange != null) {
                     IconButton(
                         onClick = {
@@ -794,43 +805,72 @@ fun PantryItemGridCard(
                         },
                         modifier = Modifier
                             .size(32.dp)
-                            .background(
-                                color = Color.LightGray.copy(alpha = 0.3f),
-                                shape = CircleShape
-                            )
+                            .background(Color.LightGray.copy(alpha = 0.3f), shape = CircleShape)
                     ) {
                         Icon(
                             imageVector = Icons.Default.Add,
                             contentDescription = "Zwiększ ilość",
-                            tint = Color(0xFF34A853), // Green color for plus
+                            tint = Color(0xFF34A853),
                             modifier = Modifier.size(20.dp)
                         )
                     }
                 }
             }
-
-            // Delete/Basket icon
-            if (onDelete != null) {
+            // Ikony usuwania i przenoszenia do listy zakupowej
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (onDelete != null) {
+                    IconButton(
+                        onClick = {
+                            onDelete(pantryItem)
+                            toastMessage = "Usunięto produkt"
+                            showSuccessToast = true
+                        },
+                        modifier = Modifier
+                            .size(32.dp)
+                            .background(Color.LightGray.copy(alpha = 0.3f), shape = CircleShape)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Delete,
+                            contentDescription = "Usuń produkt",
+                            tint = Color.Red,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
                 IconButton(
                     onClick = {
-                        onDelete(pantryItem)
+                        val shoppingItem = ShoppingItem(
+                            id = "",
+                            userId = pantryItem.userId,
+                            name = pantryItem.name,
+                            category = pantryItem.category ?: "",
+                            quantity = pantryItem.quantity,
+                            unit = pantryItem.unit,
+                            isChecked = false
+                        )
+                        db.collection("shopping_items").add(shoppingItem)
+                            .addOnSuccessListener {
+                                toastMessage = "Przesunięto do listy zakupowej"
+                                showSuccessToast = true
+                            }
+                            .addOnFailureListener {
+                                toastMessage = "Błąd podczas przenoszenia do listy zakupowej"
+                                showSuccessToast = true
+                            }
                     },
                     modifier = Modifier
                         .size(32.dp)
-                        .background(
-                            color = Color.LightGray.copy(alpha = 0.3f),
-                            shape = CircleShape
-                        )
+                        .background(Color.LightGray.copy(alpha = 0.3f), shape = CircleShape)
                 ) {
                     Icon(
                         imageVector = Icons.Default.ShoppingCart,
-                        contentDescription = "Usuń produkt",
-                        tint = Color(0xFF3DD1C6),
+                        contentDescription = "Dodaj do listy zakupów",
+                        tint = Color(0xFF34A853),
                         modifier = Modifier.size(20.dp)
                     )
                 }
             }
-
+            // Data ważności
             pantryItem.expiryDate?.let { expiryDate ->
                 formatDate(expiryDate)?.let { formattedDate ->
                     Text(
@@ -843,12 +883,21 @@ fun PantryItemGridCard(
             }
         }
     }
+    LaunchedEffect(showSuccessToast) {
+        if (showSuccessToast) {
+            Toast.makeText(context, toastMessage, Toast.LENGTH_SHORT).show()
+            kotlinx.coroutines.delay(3000)
+            showSuccessToast = false
+        }
+    }
 }
 
+// -------------------------------------------------
+//           Pomocnicze funkcje daty
+// -------------------------------------------------
 @Composable
 private fun formatDate(timestamp: Long): String? {
     if (timestamp <= 0) return null
-
     val date = Date(timestamp)
     val format = SimpleDateFormat("dd.MM.yyyy", Locale("pl"))
     return format.format(date)
@@ -859,9 +908,12 @@ private fun isExpiryClose(timestamp: Long): Boolean {
     val now = Date()
     val diff = expiryDate.time - now.time
     val daysUntilExpiry = diff / (24 * 60 * 60 * 1000)
-    return daysUntilExpiry < 7 && daysUntilExpiry >= 0
+    return daysUntilExpiry in 0..6
 }
 
+// -------------------------------------------------
+//               LocationChips
+// -------------------------------------------------
 @Composable
 fun LocationChips(
     locations: List<String>,
@@ -869,48 +921,44 @@ fun LocationChips(
     onLocationSelected: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    // Define colors for each location
     val locationColors = mapOf(
-        "Lodówka" to Color(0xFF4285F4),    // Blue for refrigerator
-        "Spiżarnia" to Color(0xFFEA4335),  // Red for pantry
-        "Apteczka" to Color(0xFF34A853)    // Green for first aid kit
+        "Lodówka" to Color(0xFF4285F4),
+        "Spiżarnia" to Color(0xFFEA4335),
+        "Apteczka" to Color(0xFF34A853)
     )
-
     Row(
         modifier = modifier.padding(bottom = 12.dp),
-        horizontalArrangement = Arrangement.SpaceBetween // Distribute evenly
+        horizontalArrangement = Arrangement.SpaceBetween
     ) {
         locations.forEach { location ->
             val isSelected = location == selectedLocation
-            val locationColor = locationColors[location] ?: Color(0xFF5F6368) // Default gray if not found
-
+            val locationColor = locationColors[location] ?: Color(0xFF5F6368)
             Surface(
                 color = if (isSelected) locationColor else Color.White,
                 shape = RoundedCornerShape(16.dp),
                 modifier = Modifier
-                    .weight(1f) // Take equal space
+                    .weight(1f)
                     .padding(horizontal = 4.dp)
-                    .border(
-                        width = 1.dp,
-                        color = locationColor,
-                        shape = RoundedCornerShape(16.dp)
-                    )
+                    .border(width = 1.dp, color = locationColor, shape = RoundedCornerShape(16.dp))
                     .clickable { onLocationSelected(location) }
             ) {
                 Text(
                     text = location,
                     color = if (isSelected) Color.White else locationColor,
                     fontWeight = FontWeight.Medium,
-                    textAlign = TextAlign.Center, // Center text
+                    textAlign = TextAlign.Center,
                     modifier = Modifier
                         .padding(horizontal = 4.dp, vertical = 8.dp)
-                        .fillMaxWidth() // Make text take full width of surface
+                        .fillMaxWidth()
                 )
             }
         }
     }
 }
 
+// -------------------------------------------------
+//               SortOption enum
+// -------------------------------------------------
 enum class SortOption {
     NAME, EXPIRY, QUANTITY
 }

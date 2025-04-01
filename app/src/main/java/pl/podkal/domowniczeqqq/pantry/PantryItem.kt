@@ -11,8 +11,8 @@ data class PantryItem(
     val unit: String = "szt.",
     val expiryDate: Long? = null,
     val purchaseDate: Long? = null,
-    val price: Double? = null
-) {
+    val price: Double? = null,
+    ) {
     // No-arg constructor required for Firestore
     constructor() : this("", "", "", "", null, "Spiżarnia", 0.0, "szt.", null, null, null)
 

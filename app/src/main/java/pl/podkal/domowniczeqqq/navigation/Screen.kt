@@ -8,6 +8,7 @@ import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.NoteAlt
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PhotoLibrary
+import androidx.compose.material.icons.filled.ShoppingCart
 import androidx.compose.ui.graphics.vector.ImageVector
 
 sealed class Screen(val route: String, val title: String, val icon: ImageVector) {
@@ -23,10 +24,12 @@ sealed class Screen(val route: String, val title: String, val icon: ImageVector)
     object Profile : Screen("profile_screen", "Profil", Icons.Filled.Person)
 
     // Get main screens for bottom navigation
+    object Shopping : Screen("shopping_screen", "Lista zakupów", Icons.Filled.ShoppingCart)
+
     companion object {
         fun getMainScreens() = listOf(Home, Finance, Receipts, More)
 
         // Get dropdown screens that appear in the "More" menu
-        fun getMoreScreens() = listOf(Notes, Pantry, Profile)
+        fun getMoreScreens() = listOf(Notes, Pantry, Shopping, Profile)
     }
 }

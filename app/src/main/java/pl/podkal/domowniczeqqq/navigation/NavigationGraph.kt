@@ -29,6 +29,7 @@ import pl.podkal.domowniczeqqq.pantry.PantryScreen
 import pl.podkal.domowniczeqqq.profile.ProfileScreen
 import pl.podkal.domowniczeqqq.receipts.ReceiptsScreen
 import pl.podkal.domowniczeqqq.register.RegisterScreen
+import pl.podkal.domowniczeqqq.shopping.ShoppingScreen
 import kotlin.math.abs
 
 // Navigation order for swipe gestures (only main screens)
@@ -82,6 +83,7 @@ fun NavigationGraph(navController: NavHostController) {
         composable("notes_screen") { NotesScreen(navController) }
         composable("archive_screen") { ArchiveScreen(navController) }
         composable("pantry_screen") { PantryScreen(navController) }
+        composable("shopping_screen") { ShoppingScreen(navController) }
         composable("profile_screen") { ProfileScreen(navController) }
     }
 }
