@@ -67,7 +67,8 @@ data class ShoppingItem(
     val quantity: Double = 1.0,
     val unit: String = "szt.",
     val category: String = "",
-    val isChecked: Boolean = false
+    val isChecked: Boolean = false,
+    val groupId: String
 ) {
     companion object {
         val CATEGORIES = mapOf(
@@ -157,15 +158,49 @@ fun ShoppingScreen(navController: NavController) {
             shoppingItems = emptyList()
             return@DisposableEffect onDispose {}
         }
-        val registration = db.collection("shopping_items")
-            .whereEqualTo("userId", userId)
+
+        val registrations = mutableListOf<() -> Unit>()
+
+        val groupIdsRegistration = db.collection("linked_accounts")
+            .whereArrayContains("users", userId)
             .addSnapshotListener { snapshot, error ->
                 if (error != null) return@addSnapshotListener
-                shoppingItems = snapshot?.documents?.mapNotNull { doc ->
-                    doc.toObject(ShoppingItem::class.java)?.copy(id = doc.id)
-                } ?: emptyList()
+
+                shoppingItems = emptyList() // Reset items before updating
+
+                // Add user's own items
+                val userItemsRegistration = db.collection("shopping_items")
+                    .whereEqualTo("groupId", userId)
+                    .addSnapshotListener { itemSnapshot, itemError ->
+                        if (itemError != null) return@addSnapshotListener
+                        val userItems = itemSnapshot?.documents?.mapNotNull { doc ->
+                            doc.toObject(ShoppingItem::class.java)?.copy(id = doc.id)
+                        } ?: emptyList()
+                        shoppingItems = (shoppingItems + userItems).distinctBy { it.id }
+                    }
+                registrations.add { userItemsRegistration.remove() }
+
+                // Add items from linked accounts
+                val groupIds = snapshot?.documents?.mapNotNull { it.id } ?: emptyList()
+                groupIds.forEach { groupId ->
+                    val groupRegistration = db.collection("shopping_items")
+                        .whereEqualTo("groupId", groupId)
+                        .addSnapshotListener { itemSnapshot, itemError ->
+                            if (itemError != null) return@addSnapshotListener
+                            val items = itemSnapshot?.documents?.mapNotNull { doc ->
+                                doc.toObject(ShoppingItem::class.java)?.copy(id = doc.id)
+                            } ?: emptyList()
+                            shoppingItems = (shoppingItems + items).distinctBy { it.id }
+                        }
+                    registrations.add { groupRegistration.remove() }
+                }
             }
-        onDispose { registration.remove() }
+
+        registrations.add { groupIdsRegistration.remove() }
+
+        onDispose {
+            registrations.forEach { it.invoke() }
+        }
     }
 
     if (showSuccessToast) {

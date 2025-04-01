@@ -1,4 +1,3 @@
-
 package pl.podkal.domowniczeqqq.shopping
 
 import androidx.compose.foundation.border
@@ -40,6 +39,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
+import com.google.firebase.auth.ktx.auth
+import com.google.firebase.ktx.Firebase
 
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -97,7 +98,7 @@ fun AddEditShoppingItemDialog(
                     .verticalScroll(rememberScrollState())
             ) {
                 Text(
-                    text = "Dodaj nowy produkt",
+                    text = if (isEditMode) "Edytuj produkt" else "Dodaj nowy produkt",
                     style = MaterialTheme.typography.titleLarge
                 )
 
@@ -262,6 +263,8 @@ fun AddEditShoppingItemDialog(
                             onSave(
                                 ShoppingItem(
                                     id = shoppingItem?.id ?: "",
+                                    userId = Firebase.auth.currentUser?.uid ?: "",
+                                    groupId = shoppingItem?.groupId ?: Firebase.auth.currentUser?.uid ?: "",
                                     name = name,
                                     category = category,
                                     quantity = quantityNum,

@@ -163,7 +163,7 @@ fun RegisterScreen(
                 onClick = {
                     if (email.isNotBlank() && password.isNotBlank()) {
                         isLoading = true
-                        viewModel.registerbyEmail(email, password)
+                        viewModel.registerByEmail(email, password)
                     }
                 },
                 modifier = Modifier

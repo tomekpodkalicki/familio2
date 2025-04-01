@@ -4,7 +4,7 @@ data class PantryItem(
     val id: String = "",
     val userId: String = "",
     val name: String = "",
-    val groupId: String = "",
+    val groupId: String = "", // This will be either userId or the shared groupId
     val description: String = "",
     val category: String? = null,
     val location: String = "Spiżarnia", // "Spiżarnia", "Lodówka", "Apteczka"

@@ -182,6 +182,84 @@ fun ProfileScreen(navController: NavController) {
                 )
                 Spacer(modifier = Modifier.height(32.dp))
 
+                // Check for pending invitations
+                var pendingInvitations by remember { mutableStateOf<List<Map<String, Any>>>(emptyList()) }
+
+                LaunchedEffect(user?.uid) {
+                    user?.uid?.let { userId ->
+                        db.collection("account_invitations")
+                            .whereEqualTo("toUserId", userId)
+                            .whereEqualTo("status", "pending")
+                            .addSnapshotListener { snapshot, _ ->
+                                snapshot?.let {
+                                    pendingInvitations = it.documents.map { doc ->
+                                        doc.data?.plus("id" to doc.id) ?: mapOf("id" to doc.id)
+                                    }
+                                }
+                            }
+                    }
+                }
+
+                // Display pending invitations
+                if (pendingInvitations.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(24.dp))
+                    Text(
+                        "Oczekujące zaproszenia:",
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    pendingInvitations.forEach { invitation ->
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp),
+                            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(16.dp)
+                            ) {
+                                Text("Od: ${invitation["fromEmail"]}")
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.End
+                                ) {
+                                    TextButton(
+                                        onClick = {
+                                            val invitationId = invitation["id"] as String
+                                            val fromUserId = invitation["fromUserId"] as String
+
+                                            // Create or update linked_accounts document
+                                            db.collection("linked_accounts")
+                                                .add(mapOf(
+                                                    "users" to listOf(fromUserId, user?.uid),
+                                                    "timestamp" to FieldValue.serverTimestamp()
+                                                ))
+                                                .addOnSuccessListener {
+                                                    // Update invitation status
+                                                    db.collection("account_invitations")
+                                                        .document(invitationId)
+                                                        .update("status", "accepted")
+                                                }
+                                        }
+                                    ) {
+                                        Text("Akceptuj")
+                                    }
+                                    TextButton(
+                                        onClick = {
+                                            val invitationId = invitation["id"] as String
+                                            db.collection("account_invitations")
+                                                .document(invitationId)
+                                                .update("status", "rejected")
+                                        }
+                                    ) {
+                                        Text("Odrzuć")
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
                 if (connectedAccounts.isNotEmpty()) {
                     Spacer(modifier = Modifier.height(24.dp))
                     Text(

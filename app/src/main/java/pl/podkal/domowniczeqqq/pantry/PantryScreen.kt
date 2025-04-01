@@ -643,13 +643,12 @@ fun PantryItemCard(
                 IconButton(
                     onClick = {
                         val shoppingItem = ShoppingItem(
-                            id = "",
                             userId = pantryItem.userId,
                             name = pantryItem.name,
-                            category = pantryItem.category ?: "",
                             quantity = pantryItem.quantity,
                             unit = pantryItem.unit,
-                            isChecked = false
+                            category = pantryItem.category ?: "",
+                            groupId = pantryItem?.groupId ?: Firebase.auth.currentUser?.uid ?: "",
                         )
                         FirebaseFirestore.getInstance().collection("shopping_items")
                             .add(shoppingItem)
@@ -854,13 +853,12 @@ fun PantryItemGridCard(
                 IconButton(
                     onClick = {
                         val shoppingItem = ShoppingItem(
-                            id = "",
                             userId = pantryItem.userId,
                             name = pantryItem.name,
-                            category = pantryItem.category ?: "",
                             quantity = pantryItem.quantity,
                             unit = pantryItem.unit,
-                            isChecked = false
+                            category = pantryItem.category ?: "",
+                            groupId = pantryItem?.groupId ?: Firebase.auth.currentUser?.uid ?: "",
                         )
                         db.collection("shopping_items").add(shoppingItem)
                             .addOnSuccessListener {

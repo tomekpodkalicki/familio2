@@ -48,6 +48,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
+import com.google.firebase.auth.ktx.auth
+import com.google.firebase.ktx.Firebase
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
@@ -405,7 +407,8 @@ fun AddEditPantryItemDialog(
 
                             val newItem = PantryItem(
                                 id = pantryItem?.id ?: "",
-                                userId = pantryItem?.userId ?: "",
+                                userId = Firebase.auth.currentUser?.uid ?: "",
+                                groupId = pantryItem?.groupId ?: Firebase.auth.currentUser?.uid ?: "",
                                 name = name,
                                 category = category,
                                 location = location,

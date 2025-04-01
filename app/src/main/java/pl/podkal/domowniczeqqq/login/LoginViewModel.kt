@@ -21,12 +21,6 @@ import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
-// Ujednolicona definicja stanu uwierzytelnienia
-sealed class AuthResponse {
-    data class Success(val user: FirebaseUser) : AuthResponse()
-    data class Error(val message: String) : AuthResponse()
-    object Loading : AuthResponse()
-}
 
 @HiltViewModel
 class LoginViewModel @Inject constructor(
@@ -43,10 +37,12 @@ class LoginViewModel @Inject constructor(
             .onEach { response ->
                 when (response) {
                     is AuthResponse.Success -> {
-                        // Zapisujemy dane użytkownika w kolekcji "users"
                         val userMap = hashMapOf(
                             "email" to response.user.email,
-                            "lastLogin" to FieldValue.serverTimestamp()
+                            "lastLogin" to FieldValue.serverTimestamp(),
+                            "displayName" to response.user.displayName,
+                            "photoUrl" to response.user.photoUrl?.toString(),
+                            "createdAt" to FieldValue.serverTimestamp()
                         )
                         db.collection("users")
                             .document(response.user.uid)
@@ -79,14 +75,32 @@ class LoginViewModel @Inject constructor(
     }
 
     fun handleGoogleSignInResult(data: Intent?) {
-        authManager.handleGoogleSignInResult(data) { success ->
-            val currentUser = Firebase.auth.currentUser
-            if (success && currentUser != null) {
-                _authState.value = AuthResponse.Success(currentUser)
-            } else {
-                _authState.value = AuthResponse.Error("Logowanie Google nie powiodło się")
+        authManager.handleGoogleSignInResult(data)
+            .onEach { response ->
+                when (response) {
+                    is AuthResponse.Success -> {
+                        val userMap = hashMapOf(
+                            "email" to response.user.email,
+                            "lastLogin" to FieldValue.serverTimestamp(),
+                            "displayName" to response.user.displayName,
+                            "photoUrl" to response.user.photoUrl?.toString(),
+                            "createdAt" to FieldValue.serverTimestamp()
+                        )
+                        db.collection("users")
+                            .document(response.user.uid)
+                            .set(userMap, SetOptions.merge())
+                            .addOnSuccessListener {
+                                _authState.value = response
+                            }
+                            .addOnFailureListener { e ->
+                                _authState.value = AuthResponse.Error(e.message ?: "Failed to save user data")
+                            }
+                    }
+                    else -> _authState.value = response
+                }
             }
-        }
+            .catch { e -> _authState.value = AuthResponse.Error(e.message ?: "Google sign-in failed") }
+            .launchIn(viewModelScope)
     }
 
     fun loginSuccess() {
