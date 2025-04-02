@@ -63,12 +63,12 @@ import pl.podkal.domowniczeqqq.navigation.BottomNavBar
 data class ShoppingItem(
     val id: String = "",
     val userId: String = "",
+    val groupId: String = "",
     val name: String = "",
     val quantity: Double = 1.0,
     val unit: String = "szt.",
     val category: String = "",
-    val isChecked: Boolean = false,
-    val groupId: String
+    val isChecked: Boolean = false
 ) {
     companion object {
         val CATEGORIES = mapOf(

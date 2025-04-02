@@ -36,9 +36,9 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Remove
-import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.ShoppingCart
 import androidx.compose.material.icons.filled.ViewList
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
@@ -643,12 +643,14 @@ fun PantryItemCard(
                 IconButton(
                     onClick = {
                         val shoppingItem = ShoppingItem(
+                            id = "",
                             userId = pantryItem.userId,
+                            groupId = pantryItem.groupId,
                             name = pantryItem.name,
+                            category = pantryItem.category ?: "",
                             quantity = pantryItem.quantity,
                             unit = pantryItem.unit,
-                            category = pantryItem.category ?: "",
-                            groupId = pantryItem?.groupId ?: Firebase.auth.currentUser?.uid ?: "",
+                            isChecked = false
                         )
                         FirebaseFirestore.getInstance().collection("shopping_items")
                             .add(shoppingItem)
@@ -853,12 +855,14 @@ fun PantryItemGridCard(
                 IconButton(
                     onClick = {
                         val shoppingItem = ShoppingItem(
+                            id = "",
                             userId = pantryItem.userId,
+                            groupId = pantryItem.groupId,
                             name = pantryItem.name,
+                            category = pantryItem.category ?: "",
                             quantity = pantryItem.quantity,
                             unit = pantryItem.unit,
-                            category = pantryItem.category ?: "",
-                            groupId = pantryItem?.groupId ?: Firebase.auth.currentUser?.uid ?: "",
+                            isChecked = false
                         )
                         db.collection("shopping_items").add(shoppingItem)
                             .addOnSuccessListener {
@@ -947,7 +951,7 @@ fun LocationChips(
             val isSelected = location == selectedLocation
             val locationColor = locationColors[location] ?: Color(0xFF5F6368)
             Surface(
-                color = if (isSelected) locationColor else Color.White,
+                color = if(isSelected) locationColor else Color.White,
                 shape = RoundedCornerShape(16.dp),
                 modifier = Modifier
                     .weight(1f)
