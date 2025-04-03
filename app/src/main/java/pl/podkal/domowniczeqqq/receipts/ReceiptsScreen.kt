@@ -12,6 +12,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.rememberTransformableState
 import androidx.compose.foundation.gestures.transformable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -32,10 +33,13 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.PhotoLibrary
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
@@ -43,6 +47,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -69,6 +74,9 @@ import com.google.firebase.auth.ktx.auth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.ktx.Firebase
 import com.google.firebase.storage.FirebaseStorage
+import com.google.mlkit.vision.common.InputImage
+import com.google.mlkit.vision.text.TextRecognition
+import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import kotlinx.coroutines.CoroutineScope
 import pl.podkal.domowniczeq.R
 import pl.podkal.domowniczeqqq.navigation.BottomNavBar
@@ -93,6 +101,12 @@ fun ReceiptsScreen(navController: NavController) {
     val scope = rememberCoroutineScope()
     var imageUri by remember { mutableStateOf<Uri?>(null) }
     val context = LocalContext.current
+    var showUploadOptions by remember { mutableStateOf(false) }
+    var showScanner by remember { mutableStateOf(false) }
+    var addToFinances by remember { mutableStateOf(false) }
+    var addToPantry by remember { mutableStateOf(false) }
+    var scannedAmount by remember { mutableStateOf<Double?>(null) }
+    var scannedProducts by remember { mutableStateOf<List<String>>(emptyList()) }
 
     // Stan do wyświetlania rozszerzonego widoku paragonu
     var selectedReceipt by remember { mutableStateOf<Receipt?>(null) }
@@ -115,8 +129,10 @@ fun ReceiptsScreen(navController: NavController) {
                     val url = doc.getString("imageUrl") ?: ""
                     val date = doc.getString("date") ?: ""
                     val name = doc.getString("name") ?: ""
+                    val addToFinances = doc.getBoolean("addToFinances") ?: false
+                    val addToPantry = doc.getBoolean("addToPantry") ?: false
                     val id = doc.id
-                    receipts.add(Receipt(url, date, name, id))
+                    receipts.add(Receipt(url, date, name, addToFinances, addToPantry, null, emptyList(), id))
                 }
             }
         onDispose {
@@ -128,16 +144,9 @@ fun ReceiptsScreen(navController: NavController) {
     val galleryLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent(),
         onResult = { uri ->
-            imageUri = uri
-            uri?.let {
-                uploadReceipt(
-                    it,
-                    db,
-                    storage,
-                    userId,
-                    scope,
-                    context
-                )
+            if (uri != null) {
+                showUploadOptions = true
+                imageUri = uri
             }
         }
     )
@@ -148,14 +157,8 @@ fun ReceiptsScreen(navController: NavController) {
             bitmap?.let {
                 val tempUri = saveBitmapToUri(context, it)
                 tempUri?.let { safeUri ->
-                    uploadReceipt(
-                        safeUri,
-                        db,
-                        storage,
-                        userId,
-                        scope,
-                        context
-                    )
+                    showUploadOptions = true
+                    imageUri = safeUri
                 }
             }
         }
@@ -163,6 +166,43 @@ fun ReceiptsScreen(navController: NavController) {
 
     val appBarColor = Color(0xFF3DD1C6) // Turkusowy (primary)
     val backgroundColor = Color(0xFFF8F8F8) // Jasnoszary (background)
+    if (showScanner) {
+        ScannerDialog(
+            onDismiss = { showScanner = false },
+            onScan = {
+                cameraLauncher.launch(null)
+                showScanner = false
+            },
+            onGallery = {
+                galleryLauncher.launch("image/*")
+                showScanner = false
+            }
+        )
+    }
+
+    if (showUploadOptions) {
+        UploadOptionsDialog(
+            onDismiss = { showUploadOptions = false; imageUri = null },
+            onConfirm = { financeOption, pantryOption ->
+                addToFinances = financeOption
+                addToPantry = pantryOption
+                showUploadOptions = false
+                imageUri?.let { finalUri ->
+                    uploadReceipt(
+                        finalUri,
+                        db,
+                        storage,
+                        userId,
+                        scope,
+                        context,
+                        addToFinances,
+                        addToPantry
+                    )
+                }
+            }
+        )
+    }
+
     Scaffold(
         containerColor = backgroundColor,
         topBar = {
@@ -192,6 +232,16 @@ fun ReceiptsScreen(navController: NavController) {
                     Icon(
                         imageVector = Icons.Filled.PhotoLibrary,
                         contentDescription = "Galeria"
+                    )
+                }
+                Spacer(modifier = Modifier.width(16.dp))
+                FloatingActionButton(
+                    onClick = { showScanner = true },
+                    containerColor = MaterialTheme.colorScheme.tertiary
+                ) {
+                    Icon(
+                        painter = painterResource(id = R.drawable.ic_receipt),
+                        contentDescription = "Skanuj"
                     )
                 }
                 Spacer(modifier = Modifier.width(16.dp))
@@ -243,7 +293,6 @@ fun ReceiptsScreen(navController: NavController) {
 
     // Pełnoekranowy widok rozszerzonego zdjęcia
     selectedReceipt?.let { receipt ->
-        // Stan do zooma, przesunięcia i rotacji
         var scale by remember { mutableStateOf(1f) }
         var offset by remember { mutableStateOf(Offset.Zero) }
         var rotation by remember { mutableStateOf(0f) }
@@ -343,7 +392,71 @@ fun ReceiptItem(
     }
 }
 
-data class Receipt(val imageUrl: String, val date: String, val name: String, val id: String)
+data class Receipt(
+    val imageUrl: String,
+    val date: String,
+    val name: String,
+    val addToFinances: Boolean,
+    val addToPantry: Boolean,
+    val totalAmount: Double?,
+    val products: List<String>,
+    val id: String
+)
+
+/**
+ * Funkcja przetwarzająca obraz paragonu.
+ * Korzysta z ML Kit OCR, by:
+ * - Wyłapać całkowitą kwotę (szukając wzorca "SUMA" lub "RAZEM")
+ * - Dzielić tekst na linie i przy pomocy ulepszonego regexu wyłapywać nazwę produktu oraz ilość
+ *
+ * Wynik przekazuje w onSuccess jako parę: totalAmount oraz lista produktów sformatowana jako "Nazwa (ilość szt)".
+ */
+fun processReceiptImage(context: Context, uri: Uri, onSuccess: (Double?, List<String>) -> Unit) {
+    InputImage.fromFilePath(context, uri).let { image ->
+        val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+        recognizer.process(image)
+            .addOnSuccessListener { visionText ->
+                val text = visionText.text
+                Log.d("OCR", "Recognized text: $text")
+
+                // Wyłapanie kwoty – szukamy wzorca "SUMA" lub "RAZEM" i dowolnych znaków aż do liczby
+                val totalRegex = Regex("(?i)(SUMA|RAZEM)[^\\d]*(\\d+[.,]\\d{2})")
+                val totalMatch = totalRegex.find(text)
+                val totalAmount = totalMatch?.groupValues?.get(2)
+                    ?.replace(",", ".")
+                    ?.toDoubleOrNull() ?: run {
+                    // Jeśli nie znaleziono, spróbuj wyłapać największą kwotę w całym tekście
+                    val allPricesRegex = Regex("(\\d+[.,]\\d{2})")
+                    val possiblePrices = allPricesRegex.findAll(text)
+                        .mapNotNull { it.value.replace(",", ".").toDoubleOrNull() }
+                        .toList()
+                    possiblePrices.maxOrNull()
+                }
+
+                // Wyłapanie produktów – dzielimy tekst na linie i szukamy linii zawierających informację o ilości
+                // Ulepszony regex: dopuszcza litery, cyfry, spacje, ukośniki, kropki, przecinki i myślniki
+                val productRegex = Regex("(?i)([A-Za-zĄĆĘŁŃÓŚŹŻąćęłńóśźż0-9\\s/.,-]+?)\\s+(\\d+)\\s*(?:szt(?:uka)?|x)\\b")
+                val products = mutableListOf<String>()
+                text.lines().forEach { line ->
+                    val match = productRegex.find(line)
+                    if (match != null) {
+                        val productName = match.groupValues[1].trim()
+                        val quantity = match.groupValues[2].toIntOrNull() ?: 1
+                        products.add("$productName ($quantity szt)")
+                    }
+                }
+
+                Log.d("OCR", "Found total amount: $totalAmount")
+                Log.d("OCR", "Found products: $products")
+                onSuccess(totalAmount, products)
+            }
+            .addOnFailureListener { e ->
+                Log.e("OCR", "Error processing receipt", e)
+                onSuccess(null, emptyList())
+            }
+    }
+}
+
 
 fun uploadReceipt(
     uri: Uri,
@@ -351,27 +464,69 @@ fun uploadReceipt(
     storage: FirebaseStorage,
     userId: String?,
     scope: CoroutineScope,
-    context: Context
+    context: Context,
+    addToFinances: Boolean,
+    addToPantry: Boolean
 ) {
     if (userId == null) return
     val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
     val storageRef = storage.reference.child("receipts/$userId/$timestamp.jpg")
 
-    storageRef.putFile(uri)
-        .addOnSuccessListener {
-            storageRef.downloadUrl.addOnSuccessListener { downloadUrl ->
-                val receiptData = mapOf(
-                    "userId" to userId,
-                    "imageUrl" to downloadUrl.toString(),
-                    "date" to SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date()),
-                    "name" to "$timestamp"
-                )
-                db.collection("receipts").add(receiptData)
-                    .addOnSuccessListener {
-                        Toast.makeText(context, "Zdjęcie zostało dodane!", Toast.LENGTH_SHORT).show()
-                    }
+    processReceiptImage(context, uri) { totalAmount, products ->
+        storageRef.putFile(uri)
+            .addOnSuccessListener {
+                storageRef.downloadUrl.addOnSuccessListener { downloadUrl ->
+                    val receiptData = mapOf(
+                        "userId" to userId,
+                        "imageUrl" to downloadUrl.toString(),
+                        "date" to SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date()),
+                        "name" to "$timestamp",
+                        "addToFinances" to addToFinances,
+                        "addToPantry" to addToPantry,
+                        "totalAmount" to totalAmount,
+                        "products" to products
+                    )
+
+                    db.collection("receipts").add(receiptData)
+                        .addOnSuccessListener { documentRef ->
+                            if (addToFinances && totalAmount != null) {
+                                db.collection("finances").add(
+                                    mapOf(
+                                        "userId" to userId,
+                                        "amount" to totalAmount,
+                                        "date" to receiptData["date"],
+                                        "type" to "expense",
+                                        "category" to "shopping",
+                                        "receiptId" to documentRef.id
+                                    )
+                                )
+                            }
+
+                            if (addToPantry && products.isNotEmpty()) {
+                                products.forEach { product ->
+                                    db.collection("pantry").add(
+                                        mapOf(
+                                            "userId" to userId,
+                                            "name" to product,
+                                            "dateAdded" to receiptData["date"],
+                                            "receiptId" to documentRef.id
+                                        )
+                                    )
+                                }
+                            }
+
+                            Toast.makeText(
+                                context,
+                                "Paragon został dodany i przetworzony!",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        }
+                }
             }
-        }
+            .addOnFailureListener {
+                Toast.makeText(context, "Błąd podczas dodawania paragonu!", Toast.LENGTH_SHORT).show()
+            }
+    }
 }
 
 fun deleteReceipt(
@@ -400,4 +555,215 @@ fun saveBitmapToUri(context: Context, bitmap: Bitmap): Uri? {
         e.printStackTrace()
         null
     }
+}
+
+@Composable
+fun UploadOptionsDialog(
+    onDismiss: () -> Unit,
+    onConfirm: (addToFinances: Boolean, addToPantry: Boolean) -> Unit
+) {
+    var addToFinances by remember { mutableStateOf(false) }
+    var addToPantry by remember { mutableStateOf(false) }
+    var showDetectedItems by remember { mutableStateOf(false) }
+    var showTotalAmount by remember { mutableStateOf(false) }
+    var detectedAmount by remember { mutableStateOf("0.00") }
+    var detectedProducts by remember { mutableStateOf(listOf<String>()) }
+
+    if (showDetectedItems) {
+        AlertDialog(
+            onDismissRequest = { showDetectedItems = false },
+            title = { Text("Wykryte produkty") },
+            text = {
+                Column {
+                    detectedProducts.forEach { product ->
+                        Text(product)
+                    }
+                }
+            },
+            confirmButton = {
+                Button(onClick = { showDetectedItems = false }) {
+                    Text("Zatwierdź")
+                }
+            }
+        )
+    }
+
+    if (showTotalAmount) {
+        AlertDialog(
+            onDismissRequest = { showTotalAmount = false },
+            title = { Text("Wykryta kwota") },
+            text = {
+                Column {
+                    Text("Suma: $detectedAmount PLN")
+                }
+            },
+            confirmButton = {
+                Button(onClick = { showTotalAmount = false }) {
+                    Text("Zatwierdź")
+                }
+            }
+        )
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Opcje dodawania paragonu") },
+        text = {
+            Column(
+                modifier = Modifier.padding(vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                Text(
+                    text = "Wybierz, gdzie chcesz dodać dane z paragonu:",
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(
+                                if (addToFinances) MaterialTheme.colorScheme.primaryContainer
+                                else MaterialTheme.colorScheme.surface
+                            )
+                            .padding(16.dp)
+                    ) {
+                        Checkbox(
+                            checked = addToFinances,
+                            onCheckedChange = { addToFinances = it }
+                        )
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                "Dodaj kwotę do finansów",
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                "Automatycznie dodaj całkowitą kwotę z paragonu do wydatków",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        IconButton(onClick = { showTotalAmount = true }) {
+                            Icon(
+                                imageVector = Icons.Default.Search,
+                                contentDescription = "Podgląd kwoty"
+                            )
+                        }
+                    }
+
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(
+                                if (addToPantry) MaterialTheme.colorScheme.primaryContainer
+                                else MaterialTheme.colorScheme.surface
+                            )
+                            .padding(16.dp)
+                    ) {
+                        Checkbox(
+                            checked = addToPantry,
+                            onCheckedChange = { addToPantry = it }
+                        )
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                "Dodaj produkty do spiżarni",
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                "Automatycznie dodaj produkty z paragonu do spiżarni",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        IconButton(onClick = { showDetectedItems = true }) {
+                            Icon(
+                                imageVector = Icons.Default.Search,
+                                contentDescription = "Podgląd produktów"
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = { onConfirm(addToFinances, addToPantry) },
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+            ) {
+                Text("Kontynuuj")
+            }
+        },
+        dismissButton = {
+            TextButton(
+                onClick = onDismiss,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+            ) {
+                Text("Anuluj")
+            }
+        }
+    )
+}
+
+@Composable
+fun ScannerDialog(
+    onDismiss: () -> Unit,
+    onScan: () -> Unit,
+    onGallery: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Skanowanie paragonu") },
+        text = {
+            Column(
+                modifier = Modifier.padding(vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                Text(
+                    text = "Wybierz sposób skanowania paragonu:",
+                    style = MaterialTheme.typography.bodyLarge
+                )
+
+                Button(
+                    onClick = onScan,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.CameraAlt,
+                        contentDescription = null,
+                        modifier = Modifier.padding(end = 8.dp)
+                    )
+                    Text("Zrób zdjęcie")
+                }
+
+                Button(
+                    onClick = onGallery,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.PhotoLibrary,
+                        contentDescription = null,
+                        modifier = Modifier.padding(end = 8.dp)
+                    )
+                    Text("Wybierz z galerii")
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Anuluj")
+            }
+        }
+    )
 }

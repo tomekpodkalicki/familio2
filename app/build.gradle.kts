@@ -87,6 +87,7 @@ dependencies {
     implementation ("com.patrykandpatrick.vico:compose:1.6.3")
     implementation ("com.patrykandpatrick.vico:compose-m3:1.6.3")
     implementation ("com.patrykandpatrick.vico:core:1.6.3")
+    implementation("com.google.mlkit:text-recognition:16.0.0")
 
     //Dagger-hilt
     implementation("com.google.dagger:hilt-android:2.48")
@@ -112,4 +113,12 @@ dependencies {
     // Debugging and development tools
     debugImplementation(libs.androidx.ui.tooling)
     debugImplementation(libs.androidx.ui.test.manifest)
+}
+kapt {
+    correctErrorTypes = true
+    useBuildCache = true
+    arguments {
+        arg("dagger.fastInit", "enabled")
+        arg("dagger.hilt.android.internal.disableAndroidSuperclassValidation", "true")
+    }
 }
