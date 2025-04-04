@@ -13,9 +13,11 @@ data class PantryItem(
     val expiryDate: Long? = null,
     val purchaseDate: Long? = null,
     val price: Double? = null,
+    val dateAdded: String? = null,
+    val receiptId: String? = null
 ) {
     // No-arg constructor required for Firestore
-    constructor() : this("", "", "","", "", null, "Spiżarnia", 0.0, "szt.", null, null, null)
+    constructor() : this("", "", "","", "", null, "Spiżarnia", 0.0, "szt.", null, null, null, null, null)
 
     companion object {
         val LOCATIONS = listOf("Spiżarnia", "Lodówka", "Apteczka")

@@ -15,6 +15,9 @@
         android:maxSdkVersion="28"/>
     <uses-permission android:name="android.permission.CAMERA" />
 
+    <queries>
+        <package android:name="xbean.image.picture.translate.ocr" />
+    </queries>
 
     <application
         android:name="pl.podkal.domowniczeqqq.ui.theme.MyApplication"

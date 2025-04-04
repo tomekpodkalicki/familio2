@@ -64,12 +64,14 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import coil.compose.rememberAsyncImagePainter
+import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.ktx.auth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.ktx.Firebase
@@ -79,7 +81,9 @@ import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import kotlinx.coroutines.CoroutineScope
 import pl.podkal.domowniczeq.R
+import pl.podkal.domowniczeqqq.finance.CategoryInfo
 import pl.podkal.domowniczeqqq.navigation.BottomNavBar
+import pl.podkal.domowniczeqqq.pantry.PantryItem
 import java.io.File
 import java.io.FileOutputStream
 import java.text.SimpleDateFormat
@@ -127,7 +131,8 @@ fun ReceiptsScreen(navController: NavController) {
                 receipts.clear()
                 snapshot?.documents?.forEach { doc ->
                     val url = doc.getString("imageUrl") ?: ""
-                    val date = doc.getString("date") ?: ""
+                    val date = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
+                        .format(Date(doc.getLong("date") ?: System.currentTimeMillis()))
                     val name = doc.getString("name") ?: ""
                     val addToFinances = doc.getBoolean("addToFinances") ?: false
                     val addToPantry = doc.getBoolean("addToPantry") ?: false
@@ -457,7 +462,6 @@ fun processReceiptImage(context: Context, uri: Uri, onSuccess: (Double?, List<St
     }
 }
 
-
 fun uploadReceipt(
     uri: Uri,
     db: FirebaseFirestore,
@@ -476,10 +480,11 @@ fun uploadReceipt(
         storageRef.putFile(uri)
             .addOnSuccessListener {
                 storageRef.downloadUrl.addOnSuccessListener { downloadUrl ->
+                    val currentUser = FirebaseAuth.getInstance().currentUser
                     val receiptData = mapOf(
-                        "userId" to userId,
+                        "userId" to (currentUser?.uid ?: ""),
                         "imageUrl" to downloadUrl.toString(),
-                        "date" to SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date()),
+                        "date" to System.currentTimeMillis(),
                         "name" to "$timestamp",
                         "addToFinances" to addToFinances,
                         "addToPantry" to addToPantry,
@@ -489,29 +494,49 @@ fun uploadReceipt(
 
                     db.collection("receipts").add(receiptData)
                         .addOnSuccessListener { documentRef ->
+                            // Zapisanie kwoty (paragonu) do kolekcji "transactions" (wcześniej "finances")
                             if (addToFinances && totalAmount != null) {
-                                db.collection("finances").add(
+                                db.collection("transactions").add(
                                     mapOf(
                                         "userId" to userId,
                                         "amount" to totalAmount,
-                                        "date" to receiptData["date"],
+                                        "date" to Date(System.currentTimeMillis()),
                                         "type" to "expense",
-                                        "category" to "shopping",
+                                        "category" to "Żywność", // Using proper capitalization
+                                        "color" to CategoryInfo.getColor("Żywność", true).toArgb(),
+                                        "isExpense" to true,
+                                        "title" to "Paragon",
                                         "receiptId" to documentRef.id
                                     )
                                 )
                             }
 
+                            // Parsowanie i zapis zeskanowanych produktów do kolekcji "pantry_items"
                             if (addToPantry && products.isNotEmpty()) {
-                                products.forEach { product ->
-                                    db.collection("pantry").add(
-                                        mapOf(
-                                            "userId" to userId,
-                                            "name" to product,
-                                            "dateAdded" to receiptData["date"],
-                                            "receiptId" to documentRef.id
-                                        )
+                                // Załóżmy, że produkty są w formacie "Nazwa produktu (X szt)"
+                                val productRegex = Regex("(.+) \\((\\d+) szt\\)")
+                                products.forEach { productString ->
+                                    val matchResult = productRegex.find(productString)
+                                    val productName = matchResult?.groupValues?.get(1)?.trim() ?: productString
+                                    val quantity = matchResult?.groupValues?.get(2)?.toIntOrNull() ?: 1
+                                    val pantryItemData = mapOf(
+                                        "id" to "",
+                                        "userId" to userId,
+                                        "name" to productName,
+                                        "groupId" to userId, // Using userId as groupId for personal items
+                                        "description" to "",
+                                        "category" to (PantryItem.CATEGORIES.entries.firstOrNull { entry ->
+                                            entry.value.any { it.equals(productName, ignoreCase = true) }
+                                        }?.key?.toString() ?: "Inne"),
+                                        "location" to "Lodówka",
+                                        "quantity" to quantity.toDouble(),
+                                        "unit" to (PantryItem.DEFAULT_UNITS[productName] ?: "szt."),
+                                        "expiryDate" to null,
+                                        "purchaseDate" to (receiptData["date"] as? Long ?: System.currentTimeMillis()),
+                                        "dateAdded" to System.currentTimeMillis().toString(),
+                                        "receiptId" to documentRef.id
                                     )
+                                    db.collection("pantry_items").add(pantryItemData)
                                 }
                             }
 
@@ -521,6 +546,9 @@ fun uploadReceipt(
                                 Toast.LENGTH_SHORT
                             ).show()
                         }
+                        .addOnFailureListener {
+                            Toast.makeText(context, "Błąd podczas dodawania paragonu!", Toast.LENGTH_SHORT).show()
+                        }
                 }
             }
             .addOnFailureListener {
@@ -528,6 +556,7 @@ fun uploadReceipt(
             }
     }
 }
+
 
 fun deleteReceipt(
     receipt: Receipt,

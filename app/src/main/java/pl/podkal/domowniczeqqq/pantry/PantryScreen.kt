@@ -39,6 +39,8 @@ import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.ShoppingCart
 import androidx.compose.material.icons.filled.ViewList
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.MergeType
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
@@ -52,6 +54,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -77,9 +80,11 @@ import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import com.google.firebase.auth.ktx.auth
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.Query
 import com.google.firebase.ktx.Firebase
 import pl.podkal.domowniczeq.R
 import pl.podkal.domowniczeqqq.navigation.BottomNavBar
+import pl.podkal.domowniczeqqq.pantry.PantryMergeHelper.mergeDuplicates
 import pl.podkal.domowniczeqqq.shopping.ShoppingItem
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -92,6 +97,7 @@ data class LinkedAccounts(val groupId: String? = null, val users: List<String> =
 fun PantryScreen(navController: NavController) {
     var toastMessage by remember { mutableStateOf("") }
     var showSuccessToast by remember { mutableStateOf(false) }
+    var showMergeConfirmation by remember { mutableStateOf(false) }
     val context = LocalContext.current
 
     val appBarColor = Color(0xFF3DD1C6)
@@ -110,7 +116,7 @@ fun PantryScreen(navController: NavController) {
     val db = FirebaseFirestore.getInstance()
     val userId = Firebase.auth.currentUser?.uid.orEmpty()
 
-    // Nasłuchiwacz Firestore
+    // Nasłuchiwacz Firestore - poprawiony aby pobierać wszystkie elementy z groupId użytkownika
     DisposableEffect(userId) {
         if (userId.isBlank()) {
             pantryItems = emptyList()
@@ -127,7 +133,7 @@ fun PantryScreen(navController: NavController) {
                 } ?: emptyList()
 
                 val pantryRegistration = db.collection("pantry_items")
-                    .whereIn("groupId", listOf(userId) + userGroups)
+                    .whereIn("groupId", listOf(userId) + userGroups) // Pobieranie elementów z groupId użytkownika
                     .addSnapshotListener { snapshot, error ->
                         if (error != null) return@addSnapshotListener
                         pantryItems = snapshot?.documents?.mapNotNull { doc ->
@@ -183,9 +189,16 @@ fun PantryScreen(navController: NavController) {
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = appBarColor),
                 actions = {
+                    IconButton(onClick = { showMergeConfirmation = true }) {
+                        Icon(
+                            imageVector = Icons.Default.MergeType, // Requires adding this icon to your project
+                            contentDescription = "Połącz duplikaty",
+                            tint = Color.White
+                        )
+                    }
                     IconButton(onClick = { isGridView = !isGridView }) {
                         Icon(
-                            imageVector = if (isGridView) Icons.Default.ViewList else Icons.Default.GridView,
+                            painter = painterResource(id = R.drawable.horizontal),
                             contentDescription = "Zmień widok",
                             tint = Color.White
                         )
@@ -377,6 +390,27 @@ fun PantryScreen(navController: NavController) {
                     }
                 }
             }
+        }
+
+        if (showMergeConfirmation) {
+            AlertDialog(
+                onDismissRequest = { showMergeConfirmation = false },
+                title = { Text("Połącz duplikaty") },
+                text = { Text("Czy chcesz połączyć produkty o tych samych nazwach? Ta operacja nie może być cofnięta.") },
+                confirmButton = {
+                    TextButton(onClick = {
+                        mergeDuplicates()
+                        showMergeConfirmation = false
+                    }) {
+                        Text("Połącz")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showMergeConfirmation = false }) {
+                        Text("Anuluj")
+                    }
+                }
+            )
         }
 
         if (showAddDialog) {
@@ -762,7 +796,7 @@ fun PantryItemGridCard(
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 pantryItem.category?.let { category ->
                     Text(
-                        text = category,
+                        text = category.toString(),
                         fontSize = 12.sp,
                         color = Color.Gray,
                         textAlign = TextAlign.Center
@@ -978,4 +1012,14 @@ fun LocationChips(
 // -------------------------------------------------
 enum class SortOption {
     NAME, EXPIRY, QUANTITY
+}
+
+fun PantryScreen.mergeDuplicates() {
+    PantryMergeHelper.mergeDuplicates(
+        pantryItems = pantryItems,
+        onSuccess = {
+            toastMessage = "Połączono produkty o tych samych nazwach"
+            showSuccessToast = true
+        }
+    )
 }
