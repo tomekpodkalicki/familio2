@@ -399,7 +399,6 @@ fun PantryScreen(navController: NavController) {
                 text = { Text("Czy chcesz połączyć produkty o tych samych nazwach? Ta operacja nie może być cofnięta.") },
                 confirmButton = {
                     TextButton(onClick = {
-                        mergeDuplicates()
                         showMergeConfirmation = false
                     }) {
                         Text("Połącz")
@@ -1014,12 +1013,3 @@ enum class SortOption {
     NAME, EXPIRY, QUANTITY
 }
 
-fun PantryScreen.mergeDuplicates() {
-    PantryMergeHelper.mergeDuplicates(
-        pantryItems = pantryItems,
-        onSuccess = {
-            toastMessage = "Połączono produkty o tych samych nazwach"
-            showSuccessToast = true
-        }
-    )
-}

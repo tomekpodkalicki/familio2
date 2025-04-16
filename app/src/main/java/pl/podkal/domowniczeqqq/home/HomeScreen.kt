@@ -189,6 +189,8 @@ fun HomeScreen(navController: NavController) {
     var selectedTime by remember { mutableStateOf<LocalTime?>(null) }
     var timeText by remember { mutableStateOf("") }
     var hasNotification by remember { mutableStateOf(false) } //Dodano dla powiadomień
+    var notificationMinutes by remember { mutableStateOf<Int?>(null) } //Dodano dla powiadomień
+    var notificationTimeExpanded by remember { mutableStateOf(false) } //Dodano dla powiadomień
 
     var showDayEventsDialog by remember { mutableStateOf(false) }
     var dayEvents by remember { mutableStateOf(emptyList<ActivityData>()) }
@@ -409,6 +411,7 @@ fun HomeScreen(navController: NavController) {
                                         selectedTime = null
                                         timeText = ""
                                         hasNotification = false
+                                        notificationMinutes = null //Dodano dla powiadomień
                                         showEventDialog = true
                                     }
                                 )
@@ -463,6 +466,7 @@ fun HomeScreen(navController: NavController) {
                                         DateTimeFormatter.ofPattern("HH:mm")
                                     ) ?: ""
                                     hasNotification = event.hasNotification //Dodano dla powiadomień
+                                    notificationMinutes = event.notificationTime //Dodano dla powiadomień
                                     showEventDialog = true
                                 }
                                 .padding(horizontal = 8.dp, vertical = 4.dp),
@@ -619,6 +623,7 @@ fun HomeScreen(navController: NavController) {
                                                     DateTimeFormatter.ofPattern("HH:mm")
                                                 ) ?: ""
                                                 hasNotification = event.hasNotification //Dodano dla powiadomień
+                                                notificationMinutes = event.notificationTime //Dodano dla powiadomień
                                                 showEventDialog = true
                                                 showDayEventsDialog = false
                                             }
@@ -672,6 +677,7 @@ fun HomeScreen(navController: NavController) {
                         selectedTime = null
                         timeText = ""
                         hasNotification = false //Dodano dla powiadomień
+                        notificationMinutes = null //Dodano dla powiadomień
                         showEventDialog = true
                         showDayEventsDialog = false
                     }) {
@@ -791,66 +797,60 @@ fun HomeScreen(navController: NavController) {
                         )
                     }
 
-                    var notificationTimeExpanded by remember { mutableStateOf(false) }
-                    var notificationMinutes by remember { mutableStateOf<Int?>(null) }
-
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Checkbox(
-                            checked = hasNotification,
-                            onCheckedChange = { checked ->
-                                hasNotification = checked
-                                if (!checked) notificationMinutes = null
-                            }
-                        )
-                        Text("Powiadomienie")
-                        if (hasNotification) {
-                            Spacer(Modifier.width(8.dp))
-                            ExposedDropdownMenuBox(
+                        Text("Powiadomienie:", style = MaterialTheme.typography.bodyMedium)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        ExposedDropdownMenuBox(
+                            expanded = notificationTimeExpanded,
+                            onExpandedChange = { notificationTimeExpanded = it }
+                        ) {
+                            OutlinedTextField(
+                                value = when(notificationMinutes) {
+                                    5 -> "5 minut przed"
+                                    15 -> "15 minut przed"
+                                    30 -> "30 minut przed"
+                                    60 -> "1 godzina przed"
+                                    1440 -> "1 dzień przed"
+                                    else -> "Brak powiadomienia"
+                                },
+                                onValueChange = {},
+                                readOnly = true,
+                                modifier = Modifier.menuAnchor()
+                            )
+                            ExposedDropdownMenu(
                                 expanded = notificationTimeExpanded,
-                                onExpandedChange = { notificationTimeExpanded = it }
+                                onDismissRequest = { notificationTimeExpanded = false }
                             ) {
-                                OutlinedTextField(
-                                    value = when(notificationMinutes) {
-                                        5 -> "5 minut przed"
-                                        15 -> "15 minut przed"
-                                        30 -> "30 minut przed"
-                                        60 -> "1 godzina przed"
-                                        1440 -> "1 dzień przed"
-                                        else -> "Wybierz czas"
-                                    },
-                                    onValueChange = {},
-                                    readOnly = true,
-                                    modifier = Modifier
-                                        .menuAnchor()
-                                        .width(150.dp),
-                                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = notificationTimeExpanded) }
-                                )
-                                ExposedDropdownMenu(
-                                    expanded = notificationTimeExpanded,
-                                    onDismissRequest = { notificationTimeExpanded = false }
-                                ) {
-                                    listOf(
-                                        5 to "5 minut przed",
-                                        15 to "15 minut przed",
-                                        30 to "30 minut przed",
-                                        60 to "1 godzina przed",
-                                        1440 to "1 dzień przed"
-                                    ).forEach { (minutes, label) ->
-                                        DropdownMenuItem(
-                                            text = { Text(label) },
-                                            onClick = {
-                                                notificationMinutes = minutes
-                                                notificationTimeExpanded = false
-                                            }
-                                        )
-                                    }
+                                listOf(null, 5, 15, 30, 60, 1440).forEach { minutes ->
+                                    DropdownMenuItem(
+                                        text = {
+                                            Text(when(minutes) {
+                                                5 -> "5 minut przed"
+                                                15 -> "15 minut przed"
+                                                30 -> "30 minut przed"
+                                                60 -> "1 godzina przed"
+                                                1440 -> "1 dzień przed"
+                                                else -> "Brak powiadomienia"
+                                            })
+                                        },
+                                        onClick = {
+                                            notificationMinutes = minutes
+                                            notificationTimeExpanded = false
+                                        }
+                                    )
                                 }
                             }
                         }
                     }
+
+                    Text("Wybierz kolor:", style = MaterialTheme.typography.bodyMedium)
+                    ColorPickerRow(
+                        onColorSelected = { chosenColor = it },
+                        selectedColor = chosenColor
+                    )
 
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         OutlinedTextField(
@@ -864,17 +864,20 @@ fun HomeScreen(navController: NavController) {
                         }
                     }
 
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
                         Text("Powiadomienie:", style = MaterialTheme.typography.bodyMedium)
                         Spacer(Modifier.width(8.dp))
-                        androidx.compose.material3.Checkbox(checked = hasNotification, onCheckedChange = { hasNotification = it })
+                        Checkbox(
+                            checked = hasNotification,
+                            onCheckedChange = {
+                                hasNotification = it
+                                notificationMinutes = if (it) 15 else null // Set default 15 min or null based on checkbox
+                            }
+                        )
                     }
-
-                    Text("Wybierz kolor:", style = MaterialTheme.typography.bodyMedium)
-                    ColorPickerRow(
-                        onColorSelected = { chosenColor = it },
-                        selectedColor = chosenColor
-                    )
 
                     // Parsujemy "HH:mm"
                     LaunchedEffect(timeText) {
@@ -911,6 +914,7 @@ fun HomeScreen(navController: NavController) {
                             "month" to currentYearMonth.monthValue,
                             "day" to editingDay!!,
                             "hasNotification" to hasNotification, //Dodano dla powiadomień
+                            "notificationTime" to notificationMinutes, //Dodano dla powiadomień
                             "groupId" to userId // Assign groupId to the current user
                         )
                         db.collection("events")
@@ -928,7 +932,33 @@ fun HomeScreen(navController: NavController) {
                         editingEvent!!.category = category.ifBlank { null }
                         editingEvent!!.time = selectedTime
                         editingEvent!!.hasNotification = hasNotification //Dodano dla powiadomień
+                        editingEvent!!.notificationTime = notificationMinutes //Dodano dla powiadomień
 
+                        // Aktualizacja w Firestore
+                        editingEvent?.docId?.let { docId ->
+                            val dataMap = hashMapOf(
+                                "userId" to userId,
+                                "title" to activityTitle,
+                                "category" to (category.ifBlank { null } ?: ""),
+                                "time" to (selectedTime?.format(DateTimeFormatter.ofPattern("HH:mm")) ?: null),
+                                "color" to chosenColor.toArgb(),
+                                "timestamp" to System.currentTimeMillis(),
+                                "createdAt" to Date(),
+                                "year" to currentYearMonth.year,
+                                "month" to currentYearMonth.monthValue,
+                                "day" to editingDay!!,
+                                "hasNotification" to hasNotification, //Dodano dla powiadomień
+                                "notificationTime" to notificationMinutes, //Dodano dla powiadomień
+                                "groupId" to userId // Assign groupId to the current user
+                            )
+                            db.collection("events").document(docId).set(dataMap)
+                                .addOnSuccessListener {
+                                    Toast.makeText(context, "Zaktualizowano: $activityTitle", Toast.LENGTH_SHORT).show()
+                                }
+                                .addOnFailureListener { e ->
+                                    Toast.makeText(context, "Błąd aktualizacji: ${e.message}", Toast.LENGTH_SHORT).show()
+                                }
+                        }
                     }
 
                     editingEvent = null
@@ -939,6 +969,7 @@ fun HomeScreen(navController: NavController) {
                     selectedTime = null
                     timeText = ""
                     hasNotification = false //Dodano dla powiadomień
+                    notificationMinutes = null //Dodano dla powiadomień
                     showEventDialog = false
                 }) {
                     Text("Zapisz")
@@ -954,6 +985,7 @@ fun HomeScreen(navController: NavController) {
                     selectedTime = null
                     timeText = ""
                     hasNotification = false //Dodano dla powiadomień
+                    notificationMinutes = null //Dodano dla powiadomień
                     showEventDialog = false
                 }) {
                     Text("Anuluj")

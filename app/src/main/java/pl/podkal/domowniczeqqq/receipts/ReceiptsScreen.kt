@@ -1,8 +1,12 @@
 package pl.podkal.domowniczeqqq.receipts
 
+import android.Manifest
 import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.net.Uri
+import android.provider.MediaStore
 import android.util.Log
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -69,6 +73,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.navigation.NavController
 import coil.compose.rememberAsyncImagePainter
 import com.google.firebase.auth.FirebaseAuth
@@ -90,17 +95,14 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ReceiptsScreen(navController: NavController) {
     val db = FirebaseFirestore.getInstance()
     val storage = FirebaseStorage.getInstance()
-
-    // Obecnie zalogowany użytkownik:
     val currentUser = Firebase.auth.currentUser
     val userId = currentUser?.uid
-
-    // Lista paragonów obserwowana w Compose
     val receipts = remember { mutableStateListOf<Receipt>() }
     val scope = rememberCoroutineScope()
     var imageUri by remember { mutableStateOf<Uri?>(null) }
@@ -111,11 +113,8 @@ fun ReceiptsScreen(navController: NavController) {
     var addToPantry by remember { mutableStateOf(false) }
     var scannedAmount by remember { mutableStateOf<Double?>(null) }
     var scannedProducts by remember { mutableStateOf<List<String>>(emptyList()) }
-
-    // Stan do wyświetlania rozszerzonego widoku paragonu
     var selectedReceipt by remember { mutableStateOf<Receipt?>(null) }
 
-    // Nasłuchiwanie zmian w kolekcji "receipts" (tylko dla zalogowanego usera)
     DisposableEffect(userId) {
         if (userId == null) {
             receipts.clear()
@@ -157,17 +156,40 @@ fun ReceiptsScreen(navController: NavController) {
     )
 
     val cameraLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.TakePicturePreview(),
-        onResult = { bitmap ->
-            bitmap?.let {
-                val tempUri = saveBitmapToUri(context, it)
-                tempUri?.let { safeUri ->
-                    showUploadOptions = true
-                    imageUri = safeUri
-                }
+        contract = ActivityResultContracts.TakePicture(),
+        onResult = { success ->
+            if (success) {
+                showUploadOptions = true
             }
         }
     )
+
+    val launcher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { isGranted: Boolean ->
+        if (isGranted) {
+            val uri = createImageUri(context)
+            if (uri != null) {
+                imageUri = uri
+                cameraLauncher.launch(uri)
+            }
+        } else {
+            Toast.makeText(context, "Camera permission denied", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    fun launchCamera() {
+        val permission = Manifest.permission.CAMERA
+        if (ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED) {
+            val uri = createImageUri(context)
+            if (uri != null) {
+                imageUri = uri
+                cameraLauncher.launch(uri)
+            }
+        } else {
+            launcher.launch(permission)
+        }
+    }
 
     val appBarColor = Color(0xFF3DD1C6) // Turkusowy (primary)
     val backgroundColor = Color(0xFFF8F8F8) // Jasnoszary (background)
@@ -175,7 +197,7 @@ fun ReceiptsScreen(navController: NavController) {
         ScannerDialog(
             onDismiss = { showScanner = false },
             onScan = {
-                cameraLauncher.launch(null)
+                launchCamera()
                 showScanner = false
             },
             onGallery = {
@@ -251,7 +273,7 @@ fun ReceiptsScreen(navController: NavController) {
                 }
                 Spacer(modifier = Modifier.width(16.dp))
                 FloatingActionButton(
-                    onClick = { cameraLauncher.launch(null) },
+                    onClick = { launchCamera() },
                     containerColor = MaterialTheme.colorScheme.tertiary
                 ) {
                     Icon(
@@ -794,5 +816,14 @@ fun ScannerDialog(
                 Text("Anuluj")
             }
         }
+    )
+}
+
+fun createImageUri(context: Context): Uri? {
+    val file = File(context.cacheDir, "temp_image_${System.currentTimeMillis()}.jpg")
+    return androidx.core.content.FileProvider.getUriForFile(
+        context,
+        "${context.packageName}.fileprovider",
+        file
     )
 }
