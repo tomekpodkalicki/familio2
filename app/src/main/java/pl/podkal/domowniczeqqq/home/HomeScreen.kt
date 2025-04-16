@@ -8,6 +8,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -89,6 +90,8 @@ import java.time.LocalTime
 import java.time.YearMonth
 import java.time.format.DateTimeFormatter
 import java.util.Date
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
 
 data class LinkedAccounts(val groupId: String? = null, val users: List<String> = emptyList())
 
@@ -105,6 +108,9 @@ val defaultCategories = listOf(
     "Inne"
 )
 
+/**
+ * Updated model to also store day, month, year.
+ */
 data class ActivityData(
     var docId: String? = null, // do usuwania/edycji w Firestore
     var title: String,
@@ -113,8 +119,13 @@ data class ActivityData(
     var time: LocalTime? = null,
     var timestamp: Long = System.currentTimeMillis(),
     var hasNotification: Boolean = false,
-    var notificationTime: Int? = null, // Czas powiadomienia w minutach przed wydarzeniem
-    var groupId: String? = null // Add groupId to ActivityData
+    var notificationTime: Int? = null, // w minutach przed wydarzeniem
+    var groupId: String? = null,
+
+    // NEW: store the event date explicitly
+    var day: Int,
+    var month: Int,
+    var year: Int
 )
 
 object CalendarEventsManager {
@@ -151,6 +162,7 @@ fun HomeScreen(navController: NavController) {
     val user = auth.currentUser
     val userId = user?.uid ?: "unknownUser"
 
+    // Blokujemy back w tym ekranie
     BackHandler { /* ignorujemy cofnięcie */ }
 
     // Stan aktualnie wybranego miesiąca
@@ -181,6 +193,8 @@ fun HomeScreen(navController: NavController) {
     // Stany dialogów
     var showEventDialog by remember { mutableStateOf(false) }
     var editingEvent by remember { mutableStateOf<ActivityData?>(null) }
+
+    // We still keep `editingDay` for the case of adding a new event.
     var editingDay by remember { mutableStateOf<Int?>(null) }
 
     var activityTitle by remember { mutableStateOf("") }
@@ -188,14 +202,18 @@ fun HomeScreen(navController: NavController) {
     var category by remember { mutableStateOf("") }
     var selectedTime by remember { mutableStateOf<LocalTime?>(null) }
     var timeText by remember { mutableStateOf("") }
-    var hasNotification by remember { mutableStateOf(false) } //Dodano dla powiadomień
-    var notificationMinutes by remember { mutableStateOf<Int?>(null) } //Dodano dla powiadomień
-    var notificationTimeExpanded by remember { mutableStateOf(false) } //Dodano dla powiadomień
 
+    // Dla powiadomień
+    var hasNotification by remember { mutableStateOf(false) }
+    var notificationMinutes by remember { mutableStateOf<Int?>(null) }
+    var notificationTimeExpanded by remember { mutableStateOf(false) }
+
+    // Dialog do wyświetlenia wydarzeń w konkretnym dniu
     var showDayEventsDialog by remember { mutableStateOf(false) }
     var dayEvents by remember { mutableStateOf(emptyList<ActivityData>()) }
     var selectedDay by remember { mutableStateOf<Int?>(null) }
 
+    // Wszystkie wydarzenia w bieżącym miesiącu (później wyświetlamy listę)
     var events by remember { mutableStateOf<List<ActivityData>>(emptyList()) }
 
     // -------------- Firestore --------------
@@ -210,6 +228,7 @@ fun HomeScreen(navController: NavController) {
                 } ?: emptyList()
 
                 val listener = db.collection("events")
+                    // Wczytujemy eventy, w których groupId jest userId LUB dowolne z userGroups
                     .whereIn("groupId", listOf(userId) + userGroups)
                     .addSnapshotListener { snapshot, error ->
                         if (error != null) {
@@ -241,6 +260,7 @@ fun HomeScreen(navController: NavController) {
                                 ?: System.currentTimeMillis()
                             val hasNotification = doc.getBoolean("hasNotification") ?: false
                             val groupId = doc.getString("groupId")
+                            val notificationTime = doc.getLong("notificationTime")?.toInt()
 
                             val activityData = ActivityData(
                                 docId = doc.id,
@@ -250,7 +270,11 @@ fun HomeScreen(navController: NavController) {
                                 time = localTime,
                                 timestamp = timestamp,
                                 hasNotification = hasNotification,
-                                groupId = groupId
+                                notificationTime = notificationTime,
+                                groupId = groupId,
+                                day = day,
+                                month = month,
+                                year = year
                             )
 
                             val ym = YearMonth.of(year, month)
@@ -260,7 +284,6 @@ fun HomeScreen(navController: NavController) {
                         }
 
                         CalendarEventsManager.userData[userId] = newMonthMap
-                        // Wydarzenia dla bieżącego YearMonth
                         events = newMonthMap[currentYearMonth]?.values?.flatten() ?: emptyList()
                     }
                 onDispose { listener.remove() }
@@ -311,7 +334,6 @@ fun HomeScreen(navController: NavController) {
         bottomBar = { BottomNavBar(navController) },
         modifier = Modifier.windowInsetsPadding(WindowInsets.navigationBars)
     ) { paddingValues ->
-        // Kolumna główna (bez scrolla)
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -338,11 +360,11 @@ fun HomeScreen(navController: NavController) {
             val dragThresholdPx = with(LocalDensity.current) { 40.dp.toPx() }
             var swipedThisGesture by remember { mutableStateOf(false) }
 
-            // 1) KALENDARZ - stała wysokość (np. 300.dp)
+            // 1) KALENDARZ
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(300.dp) // <-- stała wysokość
+                    .height(300.dp) // stała wysokość
                     .pointerInput(Unit) {
                         detectDragGestures(
                             onDragStart = { swipedThisGesture = false },
@@ -362,8 +384,6 @@ fun HomeScreen(navController: NavController) {
                         )
                     }
             ) {
-                // LazyVerticalGrid z userScrollEnabled = false,
-                // aby uniknąć drugiego scrolla w pionie
                 Column {
                     // Skróty dni tygodnia
                     Row(
@@ -385,7 +405,7 @@ fun HomeScreen(navController: NavController) {
 
                     LazyVerticalGrid(
                         columns = GridCells.Fixed(7),
-                        userScrollEnabled = false,  // <--- klucz, by nie generować pionowego scrolla
+                        userScrollEnabled = false,
                         modifier = Modifier
                             .fillMaxSize()
                             .padding(horizontal = 8.dp),
@@ -393,7 +413,7 @@ fun HomeScreen(navController: NavController) {
                         verticalArrangement = Arrangement.spacedBy(4.dp),
                         horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
-                        itemsIndexed(calendarCells) { index, day ->
+                        itemsIndexed(calendarCells) { _, day ->
                             if (day == null) {
                                 Spacer(modifier = Modifier.aspectRatio(1f))
                             } else {
@@ -403,6 +423,7 @@ fun HomeScreen(navController: NavController) {
                                     activities = dayActivities,
                                     currentYearMonth = currentYearMonth,
                                     onClick = {
+                                        // Creating a new event on this day
                                         editingDay = day
                                         editingEvent = null
                                         activityTitle = ""
@@ -411,8 +432,14 @@ fun HomeScreen(navController: NavController) {
                                         selectedTime = null
                                         timeText = ""
                                         hasNotification = false
-                                        notificationMinutes = null //Dodano dla powiadomień
+                                        notificationMinutes = null
                                         showEventDialog = true
+                                    },
+                                    onLongClick = {
+                                        // Alternatively, show day events (if you like)
+                                        selectedDay = day
+                                        dayEvents = dayActivities
+                                        showDayEventsDialog = true
                                     }
                                 )
                             }
@@ -455,9 +482,9 @@ fun HomeScreen(navController: NavController) {
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clickable {
-                                    // Edycja
+                                    // Editing existing event
                                     editingEvent = event
-                                    editingDay = null
+                                    editingDay = null // we won't use editingDay for existing
                                     activityTitle = event.title
                                     category = event.category ?: ""
                                     chosenColor = event.color
@@ -465,8 +492,8 @@ fun HomeScreen(navController: NavController) {
                                     timeText = event.time?.format(
                                         DateTimeFormatter.ofPattern("HH:mm")
                                     ) ?: ""
-                                    hasNotification = event.hasNotification //Dodano dla powiadomień
-                                    notificationMinutes = event.notificationTime //Dodano dla powiadomień
+                                    hasNotification = event.hasNotification
+                                    notificationMinutes = event.notificationTime
                                     showEventDialog = true
                                 }
                                 .padding(horizontal = 8.dp, vertical = 4.dp),
@@ -503,9 +530,15 @@ fun HomeScreen(navController: NavController) {
                                                     horizontalArrangement = Arrangement.SpaceBetween,
                                                     modifier = Modifier.fillMaxWidth()
                                                 ) {
-                                                    event.category?.let {
+                                                    if (event.category != null) {
                                                         Text(
-                                                            text = it,
+                                                            text = event.category!!,
+                                                            style = MaterialTheme.typography.bodySmall,
+                                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                        )
+                                                    } else {
+                                                        Text(
+                                                            text = "Brak kategorii",
                                                             style = MaterialTheme.typography.bodySmall,
                                                             color = MaterialTheme.colorScheme.onSurfaceVariant
                                                         )
@@ -522,7 +555,10 @@ fun HomeScreen(navController: NavController) {
                                                             )
                                                         }
                                                         IconButton(
-                                                            onClick = { deleteEvent(event, context) },
+                                                            onClick = {
+                                                                // Delete event
+                                                                deleteEvent(event, context)
+                                                            },
                                                             modifier = Modifier.size(24.dp)
                                                         ) {
                                                             Icon(
@@ -613,8 +649,9 @@ fun HomeScreen(navController: NavController) {
                                             .align(Alignment.TopStart)
                                             .padding(8.dp)
                                             .clickable {
+                                                // Edit from DayEvents
                                                 editingEvent = event
-                                                editingDay = selectedDay
+                                                editingDay = null
                                                 activityTitle = event.title
                                                 category = event.category ?: ""
                                                 chosenColor = event.color
@@ -622,18 +659,14 @@ fun HomeScreen(navController: NavController) {
                                                 timeText = event.time?.format(
                                                     DateTimeFormatter.ofPattern("HH:mm")
                                                 ) ?: ""
-                                                hasNotification = event.hasNotification //Dodano dla powiadomień
-                                                notificationMinutes = event.notificationTime //Dodano dla powiadomień
+                                                hasNotification = event.hasNotification
+                                                notificationMinutes = event.notificationTime
                                                 showEventDialog = true
                                                 showDayEventsDialog = false
                                             }
                                     ) {
                                         Text("Opis: ${event.title}", fontWeight = FontWeight.Bold)
-                                        val date = LocalDate.of(
-                                            currentYearMonth.year,
-                                            currentYearMonth.monthValue,
-                                            selectedDay!!
-                                        )
+                                        val date = LocalDate.of(event.year, event.month, event.day)
                                         val formattedDate = date.format(
                                             DateTimeFormatter.ofPattern("dd.MM.yyyy")
                                         )
@@ -645,12 +678,6 @@ fun HomeScreen(navController: NavController) {
 
                                     IconButton(
                                         onClick = {
-                                            val list = currentMonthActivities[selectedDay]
-                                            list?.remove(event)
-                                            if (list.isNullOrEmpty()) {
-                                                currentMonthActivities.remove(selectedDay)
-                                            }
-                                            // Usuń w Firestore
                                             deleteEvent(event, context)
                                             showDayEventsDialog = false
                                         },
@@ -669,6 +696,7 @@ fun HomeScreen(navController: NavController) {
                     Spacer(modifier = Modifier.height(8.dp))
 
                     Button(onClick = {
+                        // Add new event quickly
                         editingEvent = null
                         editingDay = selectedDay
                         activityTitle = ""
@@ -676,8 +704,8 @@ fun HomeScreen(navController: NavController) {
                         chosenColor = Color(0xFFDCE775)
                         selectedTime = null
                         timeText = ""
-                        hasNotification = false //Dodano dla powiadomień
-                        notificationMinutes = null //Dodano dla powiadomień
+                        hasNotification = false
+                        notificationMinutes = null
                         showEventDialog = true
                         showDayEventsDialog = false
                     }) {
@@ -708,9 +736,17 @@ fun HomeScreen(navController: NavController) {
                         style = MaterialTheme.typography.headlineSmall,
                         color = MaterialTheme.colorScheme.primary
                     )
-                    editingDay?.let { dayNum ->
+                    // If editingEvent == null, that means we are adding a new event using editingDay
+                    if (editingEvent == null && editingDay != null) {
                         Text(
-                            text = "$dayNum.${currentYearMonth.monthValue}.${currentYearMonth.year}",
+                            text = "${editingDay}.${currentYearMonth.monthValue}.${currentYearMonth.year}",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    } else if (editingEvent != null) {
+                        // Show the old date from the event
+                        Text(
+                            text = "${editingEvent!!.day}.${editingEvent!!.month}.${editingEvent!!.year}",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -874,7 +910,10 @@ fun HomeScreen(navController: NavController) {
                             checked = hasNotification,
                             onCheckedChange = {
                                 hasNotification = it
-                                notificationMinutes = if (it) 15 else null // Set default 15 min or null based on checkbox
+                                // Optionally set a default if turning on
+                                if (it && notificationMinutes == null) {
+                                    notificationMinutes = 15
+                                }
                             }
                         )
                     }
@@ -891,31 +930,30 @@ fun HomeScreen(navController: NavController) {
             },
             confirmButton = {
                 Button(onClick = {
-                    if (editingDay == null && editingEvent == null) {
-                        Toast.makeText(context, "Nie wybrano dnia!", Toast.LENGTH_SHORT).show()
-                        return@Button
-                    }
-                    if (activityTitle.isBlank()) {
-                        Toast.makeText(context, "Uzupełnij nazwę wydarzenia!", Toast.LENGTH_SHORT).show()
-                        return@Button
-                    }
-
-                    // Dodaj nowe
+                    // If adding a brand-new event
                     if (editingEvent == null) {
+                        if (editingDay == null) {
+                            Toast.makeText(context, "Nie wybrano dnia!", Toast.LENGTH_SHORT).show()
+                            return@Button
+                        }
+                        if (activityTitle.isBlank()) {
+                            Toast.makeText(context, "Uzupełnij nazwę wydarzenia!", Toast.LENGTH_SHORT).show()
+                            return@Button
+                        }
                         val dataMap = hashMapOf(
                             "userId" to userId,
                             "title" to activityTitle,
-                            "category" to (category.ifBlank { null } ?: ""),
+                            "category" to (if (category.isBlank()) null else category),
                             "time" to (selectedTime?.format(DateTimeFormatter.ofPattern("HH:mm")) ?: null),
                             "color" to chosenColor.toArgb(),
                             "timestamp" to System.currentTimeMillis(),
                             "createdAt" to Date(),
+                            "hasNotification" to hasNotification,
+                            "notificationTime" to (notificationMinutes ?: 0),
+                            "groupId" to userId,
                             "year" to currentYearMonth.year,
                             "month" to currentYearMonth.monthValue,
-                            "day" to editingDay!!,
-                            "hasNotification" to hasNotification, //Dodano dla powiadomień
-                            "notificationTime" to notificationMinutes, //Dodano dla powiadomień
-                            "groupId" to userId // Assign groupId to the current user
+                            "day" to editingDay!!  // Safe because we checked above
                         )
                         db.collection("events")
                             .add(dataMap)
@@ -926,30 +964,40 @@ fun HomeScreen(navController: NavController) {
                                 Toast.makeText(context, "Błąd zapisu: ${e.message}", Toast.LENGTH_SHORT).show()
                             }
                     } else {
-                        // Edycja lokalna
+                        // We are editing an existing event
+                        if (activityTitle.isBlank()) {
+                            Toast.makeText(context, "Uzupełnij nazwę wydarzenia!", Toast.LENGTH_SHORT).show()
+                            return@Button
+                        }
+                        // We'll keep the same day/month/year from the original event
+                        val finalDay = editingEvent!!.day
+                        val finalMonth = editingEvent!!.month
+                        val finalYear = editingEvent!!.year
+
                         editingEvent!!.title = activityTitle
                         editingEvent!!.color = chosenColor
-                        editingEvent!!.category = category.ifBlank { null }
+                        editingEvent!!.category = if (category.isBlank()) null else category
                         editingEvent!!.time = selectedTime
-                        editingEvent!!.hasNotification = hasNotification //Dodano dla powiadomień
-                        editingEvent!!.notificationTime = notificationMinutes //Dodano dla powiadomień
+                        editingEvent!!.hasNotification = hasNotification
+                        editingEvent!!.notificationTime = notificationMinutes
 
-                        // Aktualizacja w Firestore
-                        editingEvent?.docId?.let { docId ->
+                        editingEvent!!.docId?.let { docId ->
                             val dataMap = hashMapOf(
                                 "userId" to userId,
-                                "title" to activityTitle,
-                                "category" to (category.ifBlank { null } ?: ""),
+                                "title" to editingEvent!!.title,
+                                "category" to editingEvent!!.category,
                                 "time" to (selectedTime?.format(DateTimeFormatter.ofPattern("HH:mm")) ?: null),
                                 "color" to chosenColor.toArgb(),
                                 "timestamp" to System.currentTimeMillis(),
                                 "createdAt" to Date(),
-                                "year" to currentYearMonth.year,
-                                "month" to currentYearMonth.monthValue,
-                                "day" to editingDay!!,
-                                "hasNotification" to hasNotification, //Dodano dla powiadomień
-                                "notificationTime" to notificationMinutes, //Dodano dla powiadomień
-                                "groupId" to userId // Assign groupId to the current user
+                                "hasNotification" to hasNotification,
+                                "notificationTime" to (notificationMinutes ?: 0),
+                                "groupId" to (editingEvent!!.groupId ?: userId),
+
+                                // Reuse original date
+                                "year" to finalYear,
+                                "month" to finalMonth,
+                                "day" to finalDay
                             )
                             db.collection("events").document(docId).set(dataMap)
                                 .addOnSuccessListener {
@@ -961,6 +1009,7 @@ fun HomeScreen(navController: NavController) {
                         }
                     }
 
+                    // Reset states
                     editingEvent = null
                     editingDay = null
                     activityTitle = ""
@@ -968,8 +1017,8 @@ fun HomeScreen(navController: NavController) {
                     category = ""
                     selectedTime = null
                     timeText = ""
-                    hasNotification = false //Dodano dla powiadomień
-                    notificationMinutes = null //Dodano dla powiadomień
+                    hasNotification = false
+                    notificationMinutes = null
                     showEventDialog = false
                 }) {
                     Text("Zapisz")
@@ -984,8 +1033,8 @@ fun HomeScreen(navController: NavController) {
                     category = ""
                     selectedTime = null
                     timeText = ""
-                    hasNotification = false //Dodano dla powiadomień
-                    notificationMinutes = null //Dodano dla powiadomień
+                    hasNotification = false
+                    notificationMinutes = null
                     showEventDialog = false
                 }) {
                     Text("Anuluj")
@@ -1011,11 +1060,14 @@ fun HomeScreen(navController: NavController) {
 }
 
 // ----------------- KOMPONENT: Komórka jednego dnia w kalendarzu -----------------
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun DayCell(day: Int,
-            activities: List<ActivityData>,
-            currentYearMonth:YearMonth,
-            onClick: () -> Unit
+fun DayCell(
+    day: Int,
+    activities: List<ActivityData>,
+    currentYearMonth: YearMonth,
+    onClick: () -> Unit,
+    onLongClick: (() -> Unit)? = null
 ) {
     val today = LocalDate.now()
     val isCurrentDay = (
@@ -1031,7 +1083,10 @@ fun DayCell(day: Int,
         modifier = Modifier
             .aspectRatio(1f)
             .border(width = borderWidth, color = borderColor, shape = RoundedCornerShape(8.dp))
-            .clickable { onClick() }
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = onLongClick
+            )
             .padding(2.dp),
         contentAlignment = Alignment.Center
     ) {
@@ -1074,7 +1129,7 @@ fun MonthYearBar(
         modifier = Modifier
             .fillMaxWidth()
             .background(MaterialTheme.colorScheme.surfaceVariant)
-            .padding(horizontal = 4.dp, vertical = 2.dp), // minimalne marginesy
+            .padding(horizontal = 4.dp, vertical = 2.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
@@ -1082,7 +1137,8 @@ fun MonthYearBar(
             Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Poprzedni miesiąc")
         }
         Text(
-            text = "$monthName $year",            style = MaterialTheme.typography.titleSmall,
+            text = "$monthName $year",
+            style = MaterialTheme.typography.titleSmall,
             fontWeight = FontWeight.Bold
         )
         IconButton(onClick = onNextMonth) {

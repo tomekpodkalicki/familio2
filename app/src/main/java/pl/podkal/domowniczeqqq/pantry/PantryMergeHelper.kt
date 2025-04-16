@@ -14,16 +14,28 @@ object PantryMergeHelper {
 
             val updatedQuantity = items.sumOf { it.quantity }
 
+            // Ensure no null values in the data
+            val safeUpdates = mapOf(
+                "quantity" to updatedQuantity,
+                "userId" to (firstItem.userId.ifEmpty { "" }),
+                "groupId" to (firstItem.groupId.ifEmpty { "" }),
+                "name" to (firstItem.name.ifEmpty { "" }),
+                "category" to (firstItem.category.ifEmpty { "" }),
+                "unit" to (firstItem.unit.ifEmpty { "szt." })
+            )
+
             // Update the first item with the total quantity
             db.collection("pantry_items")
                 .document(firstItem.id)
-                .update("quantity", updatedQuantity)
+                .update(safeUpdates)
 
             // Delete the duplicate items
             otherItems.forEach { item ->
-                db.collection("pantry_items")
-                    .document(item.id)
-                    .delete()
+                if (item.id.isNotEmpty()) {
+                    db.collection("pantry_items")
+                        .document(item.id)
+                        .delete()
+                }
             }
         }
         onSuccess()

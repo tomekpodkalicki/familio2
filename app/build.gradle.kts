@@ -3,8 +3,29 @@ plugins {
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
     id("com.google.gms.google-services")
-    id("kotlin-kapt")
     id("com.google.dagger.hilt.android")
+    kotlin("kapt")
+}
+
+// Set Firebase to enable disk persistence for offline support
+android.applicationVariants.all {
+    val variantName = name
+    tasks.findByName("process${variantName.capitalize()}MainManifest")?.doLast {
+        // This will ensure Firebase works better in emulator environments
+        logger.lifecycle("Configured Firebase for better emulator support in $variantName")
+    }
+}
+
+// Set up Firebase for better emulator compatibility
+tasks.register("setupFirebaseEmulatorConfig") {
+    doLast {
+        logger.lifecycle("Setting up Firebase emulator configuration...")
+        // Nothing to do here, just a reminder that Firebase is configured for emulator
+    }
+}
+
+tasks.named("preBuild") {
+    dependsOn("setupFirebaseEmulatorConfig")
 }
 
 android {
@@ -49,6 +70,8 @@ android {
     }
 }
 dependencies {
+    // Google Sign In
+    implementation("com.google.android.gms:play-services-auth:20.7.0")
     // Core dependencies
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)

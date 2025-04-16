@@ -43,7 +43,7 @@ private val navigationOrder = listOf(
 @Composable
 fun NavigationGraph(navController: NavHostController) {
     val loginViewModel: LoginViewModel = hiltViewModel()
-    loginViewModel.savedStateHandle.get<String>("navigation_destination")
+    val destination = loginViewModel.savedStateHandle.get<String>("navigation_destination") ?: "home_screen"
     val currentUser = auth.currentUser
 
     LaunchedEffect(Unit) {

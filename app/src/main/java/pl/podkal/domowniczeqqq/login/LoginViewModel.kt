@@ -74,6 +74,8 @@ class LoginViewModel @Inject constructor(
         authManager.signInWithGoogle(activity, launcher)
     }
 
+    // The duplicate method was removed - keeping only the version that has Firestore integration
+
     fun handleGoogleSignInResult(data: Intent?) {
         authManager.handleGoogleSignInResult(data)
             .onEach { response ->

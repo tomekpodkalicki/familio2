@@ -6,18 +6,18 @@ data class PantryItem(
     val name: String = "",
     val groupId: String = "", // This will be either userId or the shared groupId
     val description: String = "",
-    val category: String? = null,
+    val category: String = "",
     val location: String = "Spiżarnia", // "Spiżarnia", "Lodówka", "Apteczka"
     val quantity: Double = 0.0,
     val unit: String = "szt.",
     val expiryDate: Long? = null,
     val purchaseDate: Long? = null,
     val price: Double? = null,
-    val dateAdded: String? = null,
-    val receiptId: String? = null
+    val dateAdded: String = "",
+    val receiptId: String = ""
 ) {
     // No-arg constructor required for Firestore
-    constructor() : this("", "", "","", "", null, "Spiżarnia", 0.0, "szt.", null, null, null, null, null)
+    constructor() : this("", "", "","", "", "", "Spiżarnia", 0.0, "szt.", null, null, null, "", "")
 
     companion object {
         val LOCATIONS = listOf("Spiżarnia", "Lodówka", "Apteczka")

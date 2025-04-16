@@ -5,8 +5,8 @@ import java.util.*
 
 data class Transaction(
     val id: String = UUID.randomUUID().toString(),
-    val title: String,
-    val amount: Double,
+    val title: String = "",
+    val amount: Double = 0.0,
     val date: Date = Date(),
     val category: String = "",
     val isExpense: Boolean = true,

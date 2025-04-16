@@ -126,7 +126,7 @@ fun LoginScreen(navController: NavController) {
                     Toast.makeText(context, "Uzupełnij wszystkie pola!", Toast.LENGTH_SHORT).show()
                 } else {
                     logVm.login(email, password)}
-                          },
+                },
                 modifier = Modifier
                     .width(200.dp)
                     .height(40.dp),

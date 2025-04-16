@@ -61,6 +61,7 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -85,6 +86,7 @@ import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.launch
 import pl.podkal.domowniczeq.R
 import pl.podkal.domowniczeqqq.finance.CategoryInfo
 import pl.podkal.domowniczeqqq.navigation.BottomNavBar
@@ -136,7 +138,9 @@ fun ReceiptsScreen(navController: NavController) {
                     val addToFinances = doc.getBoolean("addToFinances") ?: false
                     val addToPantry = doc.getBoolean("addToPantry") ?: false
                     val id = doc.id
-                    receipts.add(Receipt(url, date, name, addToFinances, addToPantry, null, emptyList(), id))
+                    val totalAmount = doc.getDouble("totalAmount") ?: 0.0
+                    val products = doc.get("products") as? List<String> ?: emptyList()
+                    receipts.add(Receipt(url, date, name, addToFinances, addToPantry, totalAmount, products, id))
                 }
             }
         onDispose {
@@ -420,14 +424,14 @@ fun ReceiptItem(
 }
 
 data class Receipt(
-    val imageUrl: String,
-    val date: String,
-    val name: String,
-    val addToFinances: Boolean,
-    val addToPantry: Boolean,
-    val totalAmount: Double?,
-    val products: List<String>,
-    val id: String
+    val imageUrl: String = "",
+    val date: String = "",
+    val name: String = "",
+    val addToFinances: Boolean = false,
+    val addToPantry: Boolean = false,
+    val totalAmount: Double = 0.0,
+    val products: List<String> = emptyList(),
+    val id: String = ""
 )
 
 /**
