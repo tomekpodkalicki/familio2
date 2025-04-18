@@ -1,48 +1,19 @@
 package pl.podkal.domowniczeqqq.shopping
 
+/* wszystkie potrzebne importy */
 import android.widget.Toast
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBars
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Clear
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExtendedFloatingActionButton
-import androidx.compose.material3.FabPosition
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -59,6 +30,8 @@ import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.ktx.Firebase
 import pl.podkal.domowniczeq.R
 import pl.podkal.domowniczeqqq.navigation.BottomNavBar
+
+// --------------------  MODEL  --------------------
 
 data class ShoppingItem(
     val id: String = "",
@@ -135,101 +108,74 @@ data class ShoppingItem(
     }
 }
 
+/* ------------------------------------------------------------------
+ *  SHOPPING SCREEN – listener 1 × whereIn  (bez znikania elementów)
+ * ------------------------------------------------------------------*/
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ShoppingScreen(navController: NavController) {
-    // Kolory używane w widoku
-    val appBarColor = Color(0xFF3DD1C6)
-    val backgroundColor = Color(0xFFF8F8F8)
 
+    // ---------- kolory ----------
+    val appBarColor      = Color(0xFF3DD1C6)
+    val backgroundColor  = Color(0xFFF8F8F8)
+
+    // ---------- stany UI ----------
     var shoppingItems by remember { mutableStateOf(listOf<ShoppingItem>()) }
-    var searchQuery by remember { mutableStateOf("") }
+    var searchQuery   by remember { mutableStateOf("") }
     var showAddDialog by remember { mutableStateOf(false) }
-    var selectedItem by remember { mutableStateOf<ShoppingItem?>(null) }
-    var showSuccessToast by remember { mutableStateOf(false) }
-    var toastMessage by remember { mutableStateOf("") }
+    var selectedItem  by remember { mutableStateOf<ShoppingItem?>(null) }
+    var toastMessage  by remember { mutableStateOf("") }
+    var showToast     by remember { mutableStateOf(false) }
 
     val context = LocalContext.current
-    val db = FirebaseFirestore.getInstance()
-    val userId = Firebase.auth.currentUser?.uid.orEmpty()
+    val db      = FirebaseFirestore.getInstance()
+    val userId  = Firebase.auth.currentUser?.uid.orEmpty()
+
+    /* ----------------------------------------------------------------
+     *  1️⃣  słuchacz linked_accounts  →  lista groupIds
+     * ---------------------------------------------------------------- */
+    var groupIds by remember { mutableStateOf<List<String>>(emptyList()) }
 
     DisposableEffect(userId) {
-        if (userId.isBlank()) {
-            shoppingItems = emptyList()
-            return@DisposableEffect onDispose {}
-        }
-
-        val registrations = mutableListOf<() -> Unit>()
-
-        val groupIdsRegistration = db.collection("linked_accounts")
+        if (userId.isBlank()) return@DisposableEffect onDispose { }
+        val reg = db.collection("linked_accounts")
             .whereArrayContains("users", userId)
-            .addSnapshotListener { snapshot, error ->
-                if (error != null) return@addSnapshotListener
-
-                shoppingItems = emptyList() // Reset items before updating
-
-                // Add user's own items
-                val userItemsRegistration = db.collection("shopping_items")
-                    .whereEqualTo("groupId", userId)
-                    .addSnapshotListener { itemSnapshot, itemError ->
-                        if (itemError != null) return@addSnapshotListener
-                        val userItems = itemSnapshot?.documents?.mapNotNull { doc ->
-                            doc.toObject(ShoppingItem::class.java)?.copy(id = doc.id)
-                        } ?: emptyList()
-                        shoppingItems = (shoppingItems + userItems).distinctBy { it.id }
-                    }
-                registrations.add { userItemsRegistration.remove() }
-
-                // Add items from linked accounts
-                val groupIds = snapshot?.documents?.mapNotNull { it.id } ?: emptyList()
-                groupIds.forEach { groupId ->
-                    val groupRegistration = db.collection("shopping_items")
-                        .whereEqualTo("groupId", groupId)
-                        .addSnapshotListener { itemSnapshot, itemError ->
-                            if (itemError != null) return@addSnapshotListener
-                            val items = itemSnapshot?.documents?.mapNotNull { doc ->
-                                doc.toObject(ShoppingItem::class.java)?.copy(id = doc.id)
-                            } ?: emptyList()
-                            shoppingItems = (shoppingItems + items).distinctBy { it.id }
-                        }
-                    registrations.add { groupRegistration.remove() }
-                }
+            .addSnapshotListener { snap, _ ->
+                groupIds = snap?.documents?.map { it.id } ?: emptyList()
             }
-
-        registrations.add { groupIdsRegistration.remove() }
-
-        onDispose {
-            registrations.forEach { it.invoke() }
-        }
+        onDispose { reg.remove() }
     }
 
-    if (showSuccessToast) {
-        Toast.makeText(context, toastMessage, Toast.LENGTH_SHORT).show()
-        showSuccessToast = false
+    /* ----------------------------------------------------------------
+     * 2️⃣  wspólny słuchacz na shopping_items (userId + groupIds)
+     * ---------------------------------------------------------------- */
+    DisposableEffect(userId, groupIds) {
+        if (userId.isBlank()) return@DisposableEffect onDispose { }
+        val allGroups = listOf(userId) + groupIds
+        val reg = db.collection("shopping_items")
+            .whereIn("groupId", allGroups)
+            .addSnapshotListener { snap, _ ->
+                shoppingItems = snap?.documents?.mapNotNull { d ->
+                    d.toObject(ShoppingItem::class.java)?.copy(id = d.id)
+                } ?: emptyList()
+            }
+        onDispose { reg.remove() }
     }
 
+    /* ---------- pojedynczy toast ---------- */
+    if (showToast) { Toast.makeText(context, toastMessage, Toast.LENGTH_SHORT).show(); showToast = false }
+
+    /* -----------------------------  UI  ----------------------------- */
     Scaffold(
         modifier = Modifier.windowInsetsPadding(WindowInsets.navigationBars),
         topBar = {
             TopAppBar(
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = Color(0xFF3DD1C6)
-                ),
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = appBarColor),
                 title = {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Image(
-                            painter = painterResource(R.drawable.logo),
-                            contentDescription = "Logo",
-                            modifier = Modifier
-                                .height(40.dp)
-                                .clip(RoundedCornerShape(8.dp))
-                        )
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Text(
-                            text = "Moja Lista Zakupów",
-                            style = MaterialTheme.typography.titleLarge,
-                            color = Color.White
-                        )
+                        Image(painterResource(R.drawable.logo), "Logo", Modifier.height(40.dp).clip(RoundedCornerShape(8.dp)))
+                        Spacer(Modifier.width(12.dp))
+                        Text("Moja Lista Zakupów", fontWeight = FontWeight.Bold, color = Color.White)
                     }
                 }
             )
@@ -237,104 +183,61 @@ fun ShoppingScreen(navController: NavController) {
         bottomBar = { BottomNavBar(navController) },
         floatingActionButton = {
             ExtendedFloatingActionButton(
-                onClick = { showAddDialog = true },
-                containerColor = appBarColor,
-                icon = {
-                    Icon(Icons.Default.Add, contentDescription = "Dodaj produkt")
-                },
-                text = { Text("Dodaj produkt") }
+                onClick = { showAddDialog = true }, containerColor = appBarColor,
+                icon = { Icon(Icons.Default.Add, null) }, text = { Text("Dodaj produkt") }
             )
-        },
-        floatingActionButtonPosition = FabPosition.End
-    ) { padding ->
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .background(backgroundColor)
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(16.dp)
-            ) {
-                OutlinedTextField(
-                    value = searchQuery,
-                    onValueChange = { searchQuery = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    placeholder = { Text("Szukaj produktów...") },
-                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = "Szukaj") },
-                    trailingIcon = if (searchQuery.isNotEmpty()) {
-                        {
-                            IconButton(onClick = { searchQuery = "" }) {
-                                Icon(Icons.Default.Clear, contentDescription = "Wyczyść")
-                            }
-                        }
-                    } else null
-                )
-                Spacer(modifier = Modifier.height(16.dp))
-                LazyColumn(
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxWidth()
-                ) {
-                    val filteredItems = shoppingItems.filter {
-                        it.name.contains(searchQuery, ignoreCase = true)
-                    }
-                    items(filteredItems) { item ->
-                        ShoppingItemRow(
-                            shoppingItem = item,
-                            onClick = {
-                                selectedItem = item
-                                showAddDialog = true
-                            },
-                            onDelete = { itemToDelete ->
-                                db.collection("shopping_items")
-                                    .document(itemToDelete.id)
-                                    .delete()
-                                    .addOnSuccessListener {
-                                        toastMessage = "Produkt usunięty"
-                                        showSuccessToast = true
-                                    }
-                            },
-                            db = db
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-                    }
+        }, floatingActionButtonPosition = FabPosition.End
+    ) { pad ->
+        Column(Modifier.fillMaxSize().padding(pad).padding(16.dp)) {
+            /* ---------------- Search ---------------- */
+            OutlinedTextField(
+                value = searchQuery, onValueChange = { searchQuery = it },
+                leadingIcon = { Icon(Icons.Default.Search, null) },
+                trailingIcon = if (searchQuery.isNotEmpty()) {
+                    { IconButton({ searchQuery = "" }) { Icon(Icons.Default.Clear, null) } }
+                } else null,
+                placeholder = { Text("Szukaj produktów…") }, modifier = Modifier.fillMaxWidth()
+            )
+            Spacer(Modifier.height(16.dp))
+
+            /* ---------------- Lista ---------------- */
+            LazyColumn(Modifier.weight(1f)) {
+                val filtered = shoppingItems.filter { it.name.contains(searchQuery, true) }
+                items(filtered, key = { it.id }) { item ->
+                    ShoppingItemRow(
+                        shoppingItem = item,
+                        onClick = { selectedItem = item; showAddDialog = true },
+                        onDelete = { del ->
+                            db.collection("shopping_items").document(del.id).delete()
+                            toastMessage = "Produkt usunięty"; showToast = true
+                        }, db = db
+                    )
+                    Spacer(Modifier.height(8.dp))
                 }
             }
+        }
 
-            if (showAddDialog) {
-                AddEditShoppingItemDialog(
-                    shoppingItem = selectedItem,
-                    onDismiss = {
-                        showAddDialog = false
-                        selectedItem = null
-                    },
-                    onSave = { newItem ->
-                        if (selectedItem != null) {
-                            db.collection("shopping_items").document(selectedItem!!.id)
-                                .set(newItem.copy(userId = userId))
-                            toastMessage = "Produkt został zaktualizowany"
-                            showSuccessToast = true
-                        } else {
-                            db.collection("shopping_items")
-                                .add(newItem.copy(userId = userId))
-                                .addOnSuccessListener { documentReference ->
-                                    //Log.d(TAG, "DocumentSnapshot added with ID: ${documentReference.id}")
-                                }
-                            toastMessage = "Dodano nowy produkt"
-                            showSuccessToast = true
-                        }
-                        showAddDialog = false
-                        selectedItem = null
+        /* ---------------- Dialog dodaj/edytuj ---------------- */
+        if (showAddDialog) {
+            AddEditShoppingItemDialog(
+                shoppingItem = selectedItem,
+                onDismiss = { showAddDialog = false; selectedItem = null },
+                onSave = { newItem ->
+                    if (selectedItem == null) {
+                        db.collection("shopping_items").add(newItem.copy(userId = userId))
+                        toastMessage = "Dodano produkt"; showToast = true
+                    } else {
+                        db.collection("shopping_items").document(selectedItem!!.id).set(newItem.copy(userId = userId))
+                        toastMessage = "Zaktualizowano"; showToast = true
                     }
-                )
-            }
+                    showAddDialog = false; selectedItem = null
+                }
+            )
         }
     }
 }
 
+/* --------------------  ROW  -------------------- */
 @Composable
 private fun ShoppingItemRow(
     shoppingItem: ShoppingItem,
@@ -342,109 +245,33 @@ private fun ShoppingItemRow(
     onDelete: (ShoppingItem) -> Unit,
     db: FirebaseFirestore
 ) {
-    androidx.compose.material3.Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { onClick() },
-        elevation = androidx.compose.material3.CardDefaults.cardElevation(defaultElevation = 2.dp),
-        colors = androidx.compose.material3.CardDefaults.cardColors(containerColor = Color.White)
+    Card(
+        modifier = Modifier.fillMaxWidth().clickable { onClick() },
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        elevation = CardDefaults.cardElevation(2.dp)
     ) {
-        Row(
-            modifier = Modifier
-                .padding(16.dp)
-                .fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Spacer(modifier = Modifier.width(8.dp))
-            Box(
-                modifier = Modifier
-                    .size(40.dp)
-                    .clip(CircleShape)
-                    .background(Color(0xFF3DD1C6).copy(alpha = 0.2f)),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = shoppingItem.name.take(1).uppercase(),
-                    color = Color(0xFF3DD1C6),
-                    fontWeight = FontWeight.Bold
-                )
+        Row(Modifier.padding(16.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(40.dp).clip(CircleShape).background(Color(0xFF3DD1C6).copy(.2f)), contentAlignment = Alignment.Center) {
+                Text(shoppingItem.name.first().uppercase(), color = Color(0xFF3DD1C6), fontWeight = FontWeight.Bold)
             }
-            Spacer(modifier = Modifier.width(16.dp))
-            Text(
-                text = shoppingItem.name,
-                fontWeight = FontWeight.Bold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f)
-            )
-            Spacer(modifier = Modifier.width(8.dp))
-            IconButton(
-                onClick = {
-                    val newQuantity = (shoppingItem.quantity - 1).coerceAtLeast(1.0)
-                    if (newQuantity >= 1) {
-                        db.collection("shopping_items")
-                            .document(shoppingItem.id)
-                            .update("quantity", newQuantity)
-                    }
-                },
-                modifier = Modifier
-                    .size(32.dp)
-                    .background(
-                        color = Color(0xFFEA4335).copy(alpha = 0.2f),
-                        shape = CircleShape
-                    )
-                    .padding(4.dp)
-            ) {
-                Text(
-                    text = "-",
-                    style = MaterialTheme.typography.titleLarge,
-                    color = Color(0xFFEA4335)
-                )
+            Spacer(Modifier.width(16.dp))
+            Text(shoppingItem.name, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+            CounterButton("-", Color(0xFFEA4335)) {
+                val q = (shoppingItem.quantity - 1).coerceAtLeast(1.0)
+                db.collection("shopping_items").document(shoppingItem.id).update("quantity", q)
             }
-            Spacer(modifier = Modifier.width(8.dp))
-            Text(
-                text = "%.0f".format(shoppingItem.quantity),
-                style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.width(30.dp),
-                textAlign = TextAlign.Center
-            )
-            Spacer(modifier = Modifier.width(8.dp))
-            IconButton(
-                onClick = {
-                    val newQuantity = shoppingItem.quantity + 1
-                    if (newQuantity >= 1) {
-                        db.collection("shopping_items")
-                            .document(shoppingItem.id)
-                            .update("quantity", newQuantity)
-                    }
-                },
-                modifier = Modifier
-                    .size(32.dp)
-                    .background(
-                        color = Color(0xFF4CAF50).copy(alpha = 0.2f),
-                        shape = CircleShape
-                    )
-                    .padding(4.dp)
-            ) {
-                Text(
-                    text = "+",
-                    style = MaterialTheme.typography.titleLarge,
-                    color = Color(0xFF4CAF50)
-                )
+            Text("%.0f".format(shoppingItem.quantity), style = MaterialTheme.typography.titleMedium, modifier = Modifier.width(30.dp), textAlign = TextAlign.Center)
+            CounterButton("+", Color(0xFF4CAF50)) {
+                db.collection("shopping_items").document(shoppingItem.id).update("quantity", shoppingItem.quantity + 1)
             }
-            Spacer(modifier = Modifier.width(16.dp))
-            IconButton(
-                onClick = { onDelete(shoppingItem) },
-                modifier = Modifier
-                    .size(32.dp)
-                    .padding(4.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Delete,
-                    contentDescription = "Usuń produkt",
-                    tint = Color(0xFFEA4335)
-                )
-            }
+            IconButton({ onDelete(shoppingItem) }) { Icon(Icons.Default.Delete, null, tint = Color(0xFFEA4335)) }
         }
+    }
+}
+
+@Composable
+private fun CounterButton(txt: String, tint: Color, onClick: () -> Unit) {
+    IconButton(onClick, Modifier.size(32.dp).background(tint.copy(.2f), CircleShape).padding(4.dp)) {
+        Text(txt, style = MaterialTheme.typography.titleLarge, color = tint)
     }
 }

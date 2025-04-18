@@ -157,12 +157,50 @@ fun LoginScreen(navController: NavController) {
                 }
             }
 
+            var showResetDialog by remember { mutableStateOf(false) }
+            var resetEmail by remember { mutableStateOf("") }
+
             Text(
                 "Zapomniałeś hasła?",
                 color = FamilioGray,
-                modifier = Modifier.clickable { /* dodaj reset hasła */ },
+                modifier = Modifier.clickable { showResetDialog = true },
                 fontWeight = FontWeight.Bold
             )
+
+            if (showResetDialog) {
+                AlertDialog(
+                    onDismissRequest = { showResetDialog = false },
+                    title = { Text("Resetowanie hasła") },
+                    text = {
+                        OutlinedTextField(
+                            value = resetEmail,
+                            onValueChange = { resetEmail = it },
+                            label = { Text("Email") },
+                            singleLine = true
+                        )
+                    },
+                    confirmButton = {
+                        Button(
+                            onClick = {
+                                if (resetEmail.isNotBlank()) {
+                                    logVm.resetPassword(resetEmail)
+                                    showResetDialog = false
+                                    Toast.makeText(context, "Link do resetowania hasła został wysłany na podany email", Toast.LENGTH_LONG).show()
+                                } else {
+                                    Toast.makeText(context, "Wprowadź adres email", Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                        ) {
+                            Text("Wyślij")
+                        }
+                    },
+                    dismissButton = {
+                        Button(onClick = { showResetDialog = false }) {
+                            Text("Anuluj")
+                        }
+                    }
+                )
+            }
 
             Text(
                 "Zarejestruj konto",

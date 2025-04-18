@@ -168,4 +168,30 @@ class LoginViewModel @Inject constructor(
         authManager.logout()
         _authState.value = null
     }
+
+    fun resetPassword(email: String) {
+        viewModelScope.launch {
+            try {
+                db.collection("users")
+                    .whereEqualTo("email", email)
+                    .get()
+                    .addOnCompleteListener { task ->
+                        if (task.isSuccessful && !task.result.isEmpty) {
+                            Firebase.auth.sendPasswordResetEmail(email)
+                                .addOnCompleteListener { resetTask ->
+                                    if (resetTask.isSuccessful) {
+                                        _authState.value = AuthResponse.Success(Firebase.auth.currentUser!!)
+                                    } else {
+                                        _authState.value = AuthResponse.Error("Wystąpił błąd podczas resetowania hasła")
+                                    }
+                                }
+                        } else {
+                            _authState.value = AuthResponse.Error("Nie znaleziono konta z podanym adresem email")
+                        }
+                    }
+            } catch (e: Exception) {
+                _authState.value = AuthResponse.Error("Wystąpił błąd podczas resetowania hasła")
+            }
+        }
+    }
 }
