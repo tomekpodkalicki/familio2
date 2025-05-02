@@ -2,28 +2,25 @@
 
 package pl.podkal.domowniczeqqq.login
 
+import android.app.Activity
 import android.content.Context
 import android.content.Intent
-import android.app.Activity
+import android.widget.Toast
 import androidx.activity.result.ActivityResultLauncher
 import com.google.android.gms.auth.api.signin.GoogleSignIn
-import com.google.android.gms.auth.api.signin.GoogleSignInAccount
-import com.google.android.gms.auth.api.signin.GoogleSignInClient
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions
 import com.google.android.gms.common.api.ApiException
-import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseUser
 import com.google.firebase.auth.GoogleAuthProvider
 import com.google.firebase.auth.ktx.auth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.ktx.Firebase
 import dagger.hilt.android.qualifiers.ApplicationContext
-import javax.inject.Inject
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import pl.podkal.domowniczeq.R
-import android.widget.Toast
+import javax.inject.Inject
 
 @Suppress("DEPRECATION")
 class AuthenticationManager @Inject constructor(
@@ -34,8 +31,7 @@ class AuthenticationManager @Inject constructor(
     fun createAccountWithEmail(email: String, password: String): Flow<AuthResponse> = callbackFlow {
         auth.createUserWithEmailAndPassword(email, password)
             .addOnCompleteListener { task ->
-                if (task.isSuccessful && task.result?.user != null) {
-                    trySend(AuthResponse.Success(task.result?.user!!))
+                if (task.isSuccessful && task.result?.user != null) { trySend(AuthResponse.Success(task.result?.user!!))
                 } else {
                     trySend(AuthResponse.Error(task.exception?.message ?: "Account creation failed"))
                 }
@@ -49,14 +45,11 @@ class AuthenticationManager @Inject constructor(
             .addOnCompleteListener { task ->
                 if (task.isSuccessful && task.result?.user != null) {
                     val user = task.result?.user!!
-                    // Ensure user data is not null
-                    val safeUser = user.apply {
-                        if (displayName == null) {
+                    val safeUser = user.apply { if (displayName == null) {
                             updateProfile(com.google.firebase.auth.UserProfileChangeRequest.Builder()
                                 .setDisplayName("").build())
                         }
-                        if (email == null) {
-                            // This shouldn't happen but just in case
+                        if (false) {
                             trySend(AuthResponse.Error("Email is null"))
                             Toast.makeText(context, "Login unsuccessful: missing email", Toast.LENGTH_SHORT).show()
                             close()
@@ -86,7 +79,7 @@ class AuthenticationManager @Inject constructor(
                     try {
                         // Show a dialog that allows the user to update/install Google Play Services
                         googleApiAvailability.getErrorDialog(activity, resultCode, 1001)?.show()
-                    } catch (e: Exception) {
+                    } catch (_: Exception) {
                         // If showing dialog fails, fallback to toast message
                         Toast.makeText(
                             context,
@@ -185,5 +178,4 @@ class AuthenticationManager @Inject constructor(
 sealed class AuthResponse {
     data class Success(val user: FirebaseUser) : AuthResponse()
     data class Error(val message: String) : AuthResponse()
-    object Loading : AuthResponse()
 }

@@ -33,13 +33,11 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.Menu
-import androidx.compose.material.icons.filled.Remove
-import androidx.compose.material.icons.filled.ShoppingCart
-import androidx.compose.material.icons.filled.ViewList
-import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.MergeType
+import androidx.compose.material.icons.filled.Remove
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.ShoppingCart
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -80,11 +78,9 @@ import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import com.google.firebase.auth.ktx.auth
 import com.google.firebase.firestore.FirebaseFirestore
-import com.google.firebase.firestore.Query
 import com.google.firebase.ktx.Firebase
 import pl.podkal.domowniczeq.R
 import pl.podkal.domowniczeqqq.navigation.BottomNavBar
-import pl.podkal.domowniczeqqq.pantry.PantryMergeHelper.mergeDuplicates
 import pl.podkal.domowniczeqqq.shopping.ShoppingItem
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -688,7 +684,6 @@ fun PantryItemCard(
                         FirebaseFirestore.getInstance().collection("shopping_items")
                             .add(shoppingItem)
                             .addOnSuccessListener {
-                                // Po udanym przeniesieniu usuwamy element z pantry
                                 FirebaseFirestore.getInstance().collection("pantry_items")
                                     .document(pantryItem.id)
                                     .delete()

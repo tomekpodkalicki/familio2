@@ -89,7 +89,7 @@ fun NotesScreen(navController: NavController) {
 
     val categoryOptions = listOf("Zwykła", "Praca", "Dom", "Zakupy", "Inna")
 
-    // ---------- Firestore listener ----------
+
     DisposableEffect(userId) {
         if (userId.isBlank()) { notesList.clear(); onDispose { } }
         else {

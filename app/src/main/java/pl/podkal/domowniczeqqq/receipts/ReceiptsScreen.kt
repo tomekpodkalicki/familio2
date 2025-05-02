@@ -2,11 +2,9 @@ package pl.podkal.domowniczeqqq.receipts
 
 import android.Manifest
 import android.content.Context
-import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.net.Uri
-import android.provider.MediaStore
 import android.util.Log
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -61,7 +59,6 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -86,7 +83,6 @@ import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.launch
 import pl.podkal.domowniczeq.R
 import pl.podkal.domowniczeqqq.finance.CategoryInfo
 import pl.podkal.domowniczeqqq.navigation.BottomNavBar
@@ -113,8 +109,6 @@ fun ReceiptsScreen(navController: NavController) {
     var showScanner by remember { mutableStateOf(false) }
     var addToFinances by remember { mutableStateOf(false) }
     var addToPantry by remember { mutableStateOf(false) }
-    var scannedAmount by remember { mutableStateOf<Double?>(null) }
-    var scannedProducts by remember { mutableStateOf<List<String>>(emptyList()) }
     var selectedReceipt by remember { mutableStateOf<Receipt?>(null) }
 
     DisposableEffect(userId) {
@@ -449,14 +443,11 @@ fun processReceiptImage(context: Context, uri: Uri, onSuccess: (Double?, List<St
             .addOnSuccessListener { visionText ->
                 val text = visionText.text
                 Log.d("OCR", "Recognized text: $text")
-
-                // Wyłapanie kwoty – szukamy wzorca "SUMA" lub "RAZEM" i dowolnych znaków aż do liczby
                 val totalRegex = Regex("(?i)(SUMA|RAZEM)[^\\d]*(\\d+[.,]\\d{2})")
                 val totalMatch = totalRegex.find(text)
                 val totalAmount = totalMatch?.groupValues?.get(2)
                     ?.replace(",", ".")
                     ?.toDoubleOrNull() ?: run {
-                    // Jeśli nie znaleziono, spróbuj wyłapać największą kwotę w całym tekście
                     val allPricesRegex = Regex("(\\d+[.,]\\d{2})")
                     val possiblePrices = allPricesRegex.findAll(text)
                         .mapNotNull { it.value.replace(",", ".").toDoubleOrNull() }
