@@ -7,6 +7,7 @@ import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.FirebaseFirestoreSettings
 import dagger.hilt.android.HiltAndroidApp
+import pl.podkal.domowniczeqqq.utils.NotificationHelper
 
 @HiltAndroidApp
 class MyApplication : Application() {
@@ -16,6 +17,9 @@ class MyApplication : Application() {
         try {
             // Initialize Firebase
             FirebaseApp.initializeApp(this)
+
+            // Create notification channel
+            NotificationHelper.createNotificationChannel(this)
 
             // Configure Firestore for offline persistence
             val settings = FirebaseFirestoreSettings.Builder()
