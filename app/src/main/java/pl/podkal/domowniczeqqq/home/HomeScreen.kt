@@ -1,5 +1,7 @@
 package pl.podkal.domowniczeqqq.home
 
+import android.R.id.title
+import android.app.Activity
 import android.app.TimePickerDialog
 import android.util.Log
 import android.widget.Toast
@@ -91,13 +93,12 @@ import java.time.YearMonth
 import java.time.format.DateTimeFormatter
 import java.util.Date
 import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.combinedClickable
+import pl.podkal.domowniczeqqq.utils.NotificationHelper
+import java.time.LocalDateTime
+import java.time.ZoneId
 
 data class LinkedAccounts(val groupId: String? = null, val users: List<String> = emptyList())
 
-// ---------------------- MODELE i OBIEKT PRZECHOWUJĄCY DANE ----------------------
-
-// Predefiniowane kategorie wydarzeń
 val defaultCategories = listOf(
     "Sprzątanie",
     "Zakupy",
@@ -108,9 +109,6 @@ val defaultCategories = listOf(
     "Inne"
 )
 
-/**
- * Updated model to also store day, month, year.
- */
 data class ActivityData(
     var docId: String? = null, // do usuwania/edycji w Firestore
     var title: String,
@@ -157,6 +155,13 @@ val polishMonthNames = mapOf(
 @Composable
 fun HomeScreen(navController: NavController) {
     val context = LocalContext.current
+
+    DisposableEffect(Unit) {
+        if (context is Activity) {
+            NotificationHelper.requestNotificationPermission(context)
+        }
+        onDispose { }
+    }
 
     // Zalogowany użytkownik
     val user = auth.currentUser
@@ -875,6 +880,26 @@ fun HomeScreen(navController: NavController) {
                                         onClick = {
                                             notificationMinutes = minutes
                                             notificationTimeExpanded = false
+
+                                            // Schedule notification if enabled
+                                            if (hasNotification && minutes != null && selectedTime != null) {
+                                                val eventTime = LocalDateTime.of(
+                                                    currentYearMonth.year,
+                                                    currentYearMonth.monthValue,
+                                                    editingDay ?: LocalDate.now().dayOfMonth,
+                                                    selectedTime!!.hour,
+                                                    selectedTime!!.minute
+                                                )
+                                                val notificationTime = eventTime.minusMinutes(minutes.toLong())
+
+                                                NotificationHelper.scheduleNotification(
+                                                    context,
+                                                    "Przypomnienie o wydarzeniu",
+                                                    "Wydarzenie '${activityTitle}' za $minutes minut",
+                                                    System.currentTimeMillis().toInt(),
+                                                    notificationTime.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+                                                )
+                                            }
                                         }
                                     )
                                 }
